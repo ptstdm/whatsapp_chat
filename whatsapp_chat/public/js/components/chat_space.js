@@ -70,6 +70,7 @@ export default class ChatSpace {
         title: __('Error'),
         message: __('Something went wrong. Please refresh and try again.'),
       });
+      console.error(error);
     }
   }
 

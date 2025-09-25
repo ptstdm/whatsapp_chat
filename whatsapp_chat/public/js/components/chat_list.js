@@ -68,6 +68,7 @@ export default class ChatList {
         title: __('Error'),
         message: __('Something went wrong. Please refresh and try again.'),
       });
+      console.error(error);
     }
   }
 
