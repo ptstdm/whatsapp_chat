@@ -61,7 +61,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-25 13:16:29.348544",
+ "modified": "2025-09-25 15:21:59.624226",
  "modified_by": "Administrator",
  "module": "Whatsapp Chat",
  "name": "WhatsApp Contact",
@@ -76,6 +76,17 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Employee",
    "share": 1,
    "write": 1
   }
