@@ -20,7 +20,7 @@ def execute():
 
     mobile_nos = [d.get("from")[-10:] for d in wa_msgs]
 
-    employees = frappe.get_call(
+    employees = frappe.get_all(
         "Employee",
         filters={
             "name": ["in", [d.get("lead_owner") for d in wa_msgs if d.get("lead_owner")]]
