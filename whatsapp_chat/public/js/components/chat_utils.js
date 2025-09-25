@@ -84,6 +84,7 @@ async function send_message(content, user, room, user_no, attachment) {
       title: __('Error'),
       message: __('Something went wrong. Please refresh and try again.'),
     });
+    console.error(error);
   }
 }
 
