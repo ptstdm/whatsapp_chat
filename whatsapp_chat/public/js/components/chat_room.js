@@ -14,7 +14,7 @@ export default class ChatRoom {
     this.chat_list = opts.chat_list;
     this.profile = opts.element;
     this.setup();
-    if (!this.profile.is_read) {
+    if (this.profile.message_type === "Incoming" && !this.profile.is_read) {
       set_notification_count('increment');
     }
   }
@@ -113,7 +113,7 @@ export default class ChatRoom {
           profile: this.profile,
         });
       }
-      if (this.profile.is_read === 0) {
+      if (this.profile.message_type === "Incoming" && this.profile.is_read === 0) {
         mark_message_read(this.profile.room);
         this.set_as_read();
       }

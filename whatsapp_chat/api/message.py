@@ -23,7 +23,6 @@ def get_all(room: str, user_no: str):
             else attach
         end as content
         from `tabWhatsApp Message` where (`to` = %(user_no)s or `from` = %(user_no)s)
-        AND message_type <> 'Template'
         order by creation asc
     """, {"user_no": user_no}, as_dict=True)
 
@@ -77,17 +76,12 @@ def last_message(doc, method):
     else:
         mobile_no = doc.get("from")
 
-    # get emp details
-    emp = get_lead_owner(mobile_no) or {}
-
     contact_name = frappe.db.get_value("WhatsApp Contact", filters={"mobile_no": mobile_no})
     if contact_name:
         chat_doc = frappe.get_doc("WhatsApp Contact", contact_name)
         chat_doc.last_message = doc.message
         chat_doc.is_read = 0
-        chat_doc.employee = emp.get("name")
-        chat_doc.employee_name = emp.get("employee_name")
-        chat_doc.email = emp.get("user", "Administrator")
+        chat_doc.message_type = doc.type
         chat_doc.save(ignore_permissions=True)
     else:
         chat_doc = frappe.get_doc({
@@ -95,10 +89,8 @@ def last_message(doc, method):
             "mobile_no": mobile_no,
             "last_message": doc.message,
             "contact_name": mobile_no,
-            "is_read": 0,
-            "employee": emp.get("name"),
-            "employee_name": emp.get("employee_name"),
-            "email": emp.get("user", "Administrator")
+            "message_type": doc.type,
+            "is_read": 0
         })
         chat_doc.save(ignore_permissions=True)
 
@@ -113,22 +105,3 @@ def last_message(doc, method):
         )
 
     return "ok"
-
-def get_lead_owner(mobile_no) -> list | None:
-    """Get lead owner for the lead with specified mobile number."""
-    lead = frappe.get_all(
-        "Lead",
-        filters={
-            "contact_number": ["like", mobile_no[-10:]]
-        },
-        fields=["name", "lead_owner"],
-        order_by="creation desc",
-        limit_page_length=1
-    )
-
-    if not lead:
-        return None
-    
-    emp = frappe.db.get_value("Employee", lead[0].lead_owner, ["name", "employee_name", "user"], as_dict=True)
-
-    return emp
