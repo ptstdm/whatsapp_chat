@@ -89,6 +89,7 @@ export default class ChatList {
         room_name: element.contact_name,
         room_type: element.type,
         opposite_person_email: element.mobile_no,
+        message_type: element.message_type
       };
 
       this.chat_rooms.push([

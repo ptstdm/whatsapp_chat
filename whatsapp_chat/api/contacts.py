@@ -1,7 +1,5 @@
 import frappe
 
-
-
 @frappe.whitelist()
 def create(contact_name, mobile_no, email):
     """Create contact."""
@@ -27,5 +25,6 @@ def get(email):
     return frappe.db.get_all(
         "WhatsApp Contact",
         filters=filters,
-        fields=["*"]
+        fields=["*"],
+        order_by="message_type"
     )

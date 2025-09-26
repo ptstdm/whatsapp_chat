@@ -142,9 +142,6 @@ app_include_js = ['whatsapp_chat.bundle.js'] if is_frappe_above_v13 else [
 doc_events = {
     "WhatsApp Message": {
         "after_insert":"whatsapp_chat.api.message.last_message"
-    },
-    "Lead":{
-        "on_update":"whatsapp_chat.api.lead.on_update"
     }
 }
 

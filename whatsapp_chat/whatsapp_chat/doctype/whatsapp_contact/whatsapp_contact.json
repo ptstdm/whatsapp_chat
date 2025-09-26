@@ -7,6 +7,7 @@
  "field_order": [
   "contact_name",
   "mobile_no",
+  "message_type",
   "is_read",
   "last_message",
   "employee",
@@ -22,6 +23,8 @@
   {
    "fieldname": "mobile_no",
    "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
    "label": "Mobile No",
    "unique": 1
   },
@@ -40,6 +43,8 @@
    "description": "Assign chat to a user",
    "fieldname": "employee",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Employee",
    "options": "Employee"
   },
@@ -54,14 +59,23 @@
    "fetch_from": "employee.user",
    "fieldname": "email",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Email",
    "options": "User",
    "read_only": 1
+  },
+  {
+   "fieldname": "message_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Message Type",
+   "options": "Incoming\nOutgoing"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-25 15:21:59.624226",
+ "modified": "2025-09-26 13:57:11.814735",
  "modified_by": "Administrator",
  "module": "Whatsapp Chat",
  "name": "WhatsApp Contact",
