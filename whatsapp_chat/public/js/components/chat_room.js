@@ -39,9 +39,8 @@ export default class ChatRoom {
 						style='display: ${this.profile.is_read ? 'none' : 'inline-block'}'
 					></div>
 				</div>
-				<div style='color: ${
-          this.profile.is_read ? 'var(--text-muted)' : 'var(--text-color)'
-        }' class='last-message'>${__(last_message)}</div>
+				<div style='color: ${this.profile.is_read ? 'var(--text-muted)' : 'var(--text-color)'
+      }' class='last-message'>${__(last_message)}</div>
 			</div>
 		`;
     const date_html = `
@@ -103,20 +102,33 @@ export default class ChatRoom {
   }
 
   setup_events() {
-    this.$chat_room.on('click', () => {
+    this.$chat_room.on('click', async () => {
       if (typeof this.chat_space !== 'undefined') {
-        this.chat_space.render();
+        // Chat space exists, just refresh the messages
+        const refreshed = await this.chat_space.refresh_messages();
+        if (refreshed) {
+          // Show the existing chat space
+          this.chat_space.$chat_space.show();
+        } else {
+          // If refresh failed, create new instance
+          this.create_new_chat_space();
+        }
       } else {
-        this.chat_space = new ChatSpace({
-          $wrapper: this.$wrapper,
-          chat_list: this.chat_list,
-          profile: this.profile,
-        });
+        // Create new chat space
+        this.create_new_chat_space();
       }
       if (this.profile.message_type === "Incoming" && this.profile.is_read === 0) {
         mark_message_read(this.profile.room);
         this.set_as_read();
       }
+    });
+  }
+
+  create_new_chat_space() {
+    this.chat_space = new ChatSpace({
+      $wrapper: this.$wrapper,
+      chat_list: this.chat_list,
+      profile: this.profile,
     });
   }
 }

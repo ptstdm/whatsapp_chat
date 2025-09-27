@@ -1,7 +1,7 @@
 import ChatRoom from './chat_room';
 import ChatAddRoom from './chat_add_room';
 import ChatUserSettings from './chat_user_settings';
-import { get_rooms, mark_message_read } from './chat_utils';
+import { get_rooms, mark_message_read, get_time } from './chat_utils';
 
 export default class ChatList {
   constructor(opts) {
@@ -192,12 +192,52 @@ export default class ChatList {
 
       chat_room_item[1].set_last_message(message, res.creation);
 
-      if ($('.chat-list').length) {
-        chat_room_item[1].set_as_unread();
+      // Check if user is in chat list or active chat space
+      if ($('.chat-list').is(':visible')) {
+        // User is viewing chat list
+        if (res.sender_user_no !== me.user_email) {
+          chat_room_item[1].set_as_unread();
+        }
         chat_room_item[1].move_to_top();
         me.move_room_to_top(chat_room_item);
-      } else if ($('.chat-space').length) {
-        mark_message_read(res.room);
+      }
+      else if ($('.chat-space').is(':visible')) {
+        // User is in an active chat room
+        const current_room = $('.chat-space').attr('data-current-room');
+
+        if (current_room === res.room) {
+          // Update the active chat space with new message
+          const active_chat_space = chat_room_item[1].chat_space;
+          if (active_chat_space && typeof active_chat_space.receive_message === 'function') {
+            // Add the message to the active chat
+            active_chat_space.receive_message(res, get_time(res.creation));
+
+            // Mark as read since user is actively viewing this room
+            mark_message_read(res.room);
+          }
+
+          // move room to top
+          chat_room_item[1].move_to_top();
+          me.move_room_to_top(chat_room_item);
+        }
+        else {
+          // Different room is open - mark as unread
+          if (res.sender_user_no !== me.user_email) {
+            chat_room_item[1].set_as_unread();
+          }
+          // Move room to top for background rooms too
+          chat_room_item[1].move_to_top();
+          me.move_room_to_top(chat_room_item);
+        }
+      }
+      else {
+        // Handle case when neither chat-list nor chat-space is visible
+        // This could happen if user is in settings or other screens
+        if (res.sender_user_no !== me.user_email) {
+          chat_room_item[1].set_as_unread();
+        }
+        chat_room_item[1].move_to_top();
+        me.move_room_to_top(chat_room_item);
       }
     });
 
