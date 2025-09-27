@@ -36,13 +36,12 @@ export default class ChatSpace {
     );
     const header_html = `
 			<div class='chat-header'>
-				${
-          this.profile.is_admin === true
-            ? `<span class='chat-back-button' title='${__('Go Back')}' >
+				${this.profile.is_admin === true
+        ? `<span class='chat-back-button' title='${__('Go Back')}' >
 								${frappe.utils.icon('left')}
 							</span>`
-            : ``
-        }
+        : ``
+      }
 				${this.avatar_html}
 				<div class='chat-profile-info'>
 					<div class='chat-profile-name'>
@@ -138,6 +137,11 @@ export default class ChatSpace {
   }
 
   setup_actions() {
+    // Remove existing chat actions if they exist
+    if (this.$chat_actions) {
+      this.$chat_actions.remove();
+    }
+
     this.$chat_actions = $(document.createElement('div'));
     this.$chat_actions.addClass('chat-space-actions');
     const chat_actions_html = `
@@ -393,35 +397,63 @@ export default class ChatSpace {
   }
 
   receive_message(res, time) {
-    let chat_type = 'sender';
+    // Don't add message if it's from the current user (avoid duplicates)
     if (res.sender_user_no === this.profile.user_email) {
       return;
     }
 
-    if (
-      this.profile.is_admin === true &&
-      $('.chat-element').is(':visible') &&
-      frappe.Chat.settings.user.enable_message_tone === 1
-    ) {
-      frappe.utils.play_sound('chat-message-receive');
-    }
+    let chat_type = 'sender';
 
+    // Determine message type based on room type
     if (this.profile.room_type === 'Guest') {
       if (this.profile.is_admin === true && res.user !== 'Guest') {
         chat_type = 'recipient';
       }
     }
 
+    // Add date separator if needed
+    const date_line_html = this.make_date_line_html(res.creation);
+    if (date_line_html) {
+      this.$chat_space_container.append(date_line_html);
+    }
+
+    // Add the new message
     this.$chat_space_container.append(
       this.make_message(res.content, time, chat_type, res.user)
     );
+
+    // Scroll to bottom to show new message
     scroll_to_bottom(this.$chat_space_container);
+
+    // Update previous message for date line calculation
+    this.prevMessage = res;
   }
 
   render() {
     this.$wrapper.html(this.$chat_space);
+
+    // Set data attribute to track current room
+    this.$chat_space.attr('data-current-room', this.profile.room);
+
     this.setup_events();
 
     scroll_to_bottom(this.$chat_space_container);
+  }
+
+  async refresh_messages() {
+    try {
+      // Clear existing messages container
+      if (this.$chat_space_container) {
+        this.$chat_space_container.remove();
+      }
+
+      // Re-fetch and setup messages (this will recreate the container)
+      await this.fetch_and_setup_messages();
+
+      return true;
+    } catch (error) {
+      console.error('Error refreshing messages:', error);
+      return false;
+    }
   }
 }
