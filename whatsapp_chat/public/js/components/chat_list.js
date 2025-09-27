@@ -23,20 +23,24 @@ export default class ChatList {
 
   setup_header() {
     const chat_list_header_html = `
-			<div class='chat-list-header'>
-				<h3>${__('Chats')}</h3>
-        <div class='chat-list-icons'>
-          <div class='add-room' 
-            title='Create Private Room'>
-            ${frappe.utils.icon('users', 'md')}
-          </div>
-          <div class='user-settings' 
-          title='Settings' style="display:none">
-          ${frappe.utils.icon('setting-gear', 'md')}
-          </div>
+    <div class='chat-list-header'>
+      <div class='header-left'>
+        <h3>${__('Chats')}</h3>
+        <label class='unread-filter-container'>
+          <input type='checkbox' class='unread-filter-checkbox'>
+          <span class='checkmark'>${__('Unread')}</span>
+        </label>
+      </div>
+      <div class='chat-list-icons'>
+        <div class='add-room' title='Create Private Room'>
+          ${frappe.utils.icon('users', 'md')}
         </div>
-			</div>
-		`;
+        <div class='user-settings' title='Settings' style="display:none">
+          ${frappe.utils.icon('setting-gear', 'md')}
+        </div>
+      </div>
+    </div>
+  `;
     this.$chat_list.append(chat_list_header_html);
   }
 
@@ -105,10 +109,19 @@ export default class ChatList {
     this.$chat_list.append(this.$chat_rooms_container);
   }
 
-  fitler_rooms(query) {
+  filter_rooms(query, showOnlyUnread = false) {
     for (const room of this.chat_rooms) {
       const txt = room[1].profile.room_name.toLowerCase();
-      if (txt.includes(query)) {
+      const matchesSearch = query === '' || txt.includes(query);
+
+      let matchesFilter = true;
+      if (showOnlyUnread) {
+        // Show only unread incoming messages
+        matchesFilter = room[1].profile.is_read === 0 &&
+          room[1].profile.message_type === 'Incoming';
+      }
+
+      if (matchesSearch && matchesFilter) {
         room[1].$chat_room.show();
       } else {
         room[1].$chat_room.hide();
@@ -131,8 +144,18 @@ export default class ChatList {
 
   setup_events() {
     const me = this;
+
     $('.chat-search-box').on('input', function (e) {
-      me.fitler_rooms($(this).val().toLowerCase());
+      const query = $(this).val().toLowerCase();
+      const showOnlyUnread = $('.unread-filter-checkbox').is(':checked');
+      me.filter_rooms(query, showOnlyUnread);
+    });
+
+    // Handle unread filter checkbox
+    $('.unread-filter-checkbox').on('change', function (e) {
+      const showOnlyUnread = $(this).is(':checked');
+      const query = $('.chat-search-box').val().toLowerCase();
+      me.filter_rooms(query, showOnlyUnread);
     });
 
     $('.add-room').on('click', function (e) {
@@ -200,6 +223,9 @@ export default class ChatList {
         }
         chat_room_item[1].move_to_top();
         me.move_room_to_top(chat_room_item);
+
+        // refresh filter after message update
+        me.refresh_current_filter();
       }
       else if ($('.chat-space').is(':visible')) {
         // User is in an active chat room
@@ -282,5 +308,12 @@ export default class ChatList {
         me.create_new_room(res);
       }
     });
+  }
+
+  // Helper method to refresh current filter
+  refresh_current_filter() {
+    const query = $('.chat-search-box').val().toLowerCase();
+    const showOnlyUnread = $('.unread-filter-checkbox').is(':checked');
+    this.filter_rooms(query, showOnlyUnread);
   }
 }

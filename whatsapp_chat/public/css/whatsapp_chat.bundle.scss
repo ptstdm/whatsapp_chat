@@ -410,6 +410,43 @@ $height: 582px;
   }
 }
 
+.chat-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background-color: #f9f9f9;
+  border-bottom: 1px solid #ddd;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.header-left h3 {
+  margin-right: 10px;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.unread-filter-container {
+  display: flex;
+  align-items: center;
+  margin-left: 15px;
+  font-size: 14px;
+}
+
+.unread-filter-checkbox {
+  margin-right: 5px;
+  transform: scale(1.2); /* Slightly larger checkbox for better visibility */
+}
+
+.checkmark {
+  display: inline-block;
+  color: #333;
+}
+
 @media (max-width: 576px) {
   .chat-app {
     max-width: 100%;

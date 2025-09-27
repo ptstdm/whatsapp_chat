@@ -31,7 +31,7 @@ def get_all(room: str, user_no: str):
 def mark_as_read(room):
     doc = frappe.get_doc("WhatsApp Contact", room)
     doc.is_read = 1
-    doc.save(ignore_permissions=True)
+    doc.db_update()
 
     return "ok"
 
