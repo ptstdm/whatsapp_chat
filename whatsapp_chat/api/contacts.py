@@ -26,5 +26,5 @@ def get(email):
         "WhatsApp Contact",
         filters=filters,
         fields=["*"],
-        order_by="message_type"
+        order_by="message_type asc, creation desc"
     )
