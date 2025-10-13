@@ -82,13 +82,15 @@ def last_message(doc, method):
         chat_doc.last_message = doc.message
         chat_doc.is_read = 0
         chat_doc.message_type = doc.type
+        if chat_doc.contact_name == mobile_no and doc.get("profile_name"):
+            chat_doc.contact_name = doc.get("profile_name")
         chat_doc.save(ignore_permissions=True)
     else:
         chat_doc = frappe.get_doc({
             "doctype": "WhatsApp Contact",
             "mobile_no": mobile_no,
             "last_message": doc.message,
-            "contact_name": mobile_no,
+            "contact_name": doc.get("profile_name") or mobile_no,
             "message_type": doc.type,
             "is_read": 0
         })
