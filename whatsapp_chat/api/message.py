@@ -75,20 +75,24 @@ def last_message(doc, method):
         mobile_no = doc.to
     else:
         mobile_no = doc.get("from")
+    
+    mobile_no = mobile_no[-10:]
 
-    contact_name = frappe.db.get_value("WhatsApp Contact", filters={"mobile_no": mobile_no})
+    contact_name = frappe.db.get_value("WhatsApp Contact", filters={"mobile_no": ["like", f"%{mobile_no}"]}, order_by="modified desc")
     if contact_name:
         chat_doc = frappe.get_doc("WhatsApp Contact", contact_name)
         chat_doc.last_message = doc.message
         chat_doc.is_read = 0
         chat_doc.message_type = doc.type
+        if chat_doc.contact_name[-10:] == mobile_no and doc.get("profile_name"):
+            chat_doc.contact_name = doc.get("profile_name")
         chat_doc.save(ignore_permissions=True)
     else:
         chat_doc = frappe.get_doc({
             "doctype": "WhatsApp Contact",
             "mobile_no": mobile_no,
             "last_message": doc.message,
-            "contact_name": mobile_no,
+            "contact_name": doc.get("profile_name") or mobile_no,
             "message_type": doc.type,
             "is_read": 0
         })
