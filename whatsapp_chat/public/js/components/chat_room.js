@@ -22,6 +22,7 @@ export default class ChatRoom {
   setup() {
     this.$chat_room = $(document.createElement('div'));
     this.$chat_room.addClass('chat-room');
+    this.$chat_room.attr('id', this.profile.user_email);
 
     this.avatar_html = get_avatar_html(
       this.profile.room_type,
@@ -32,17 +33,17 @@ export default class ChatRoom {
     let last_message = this.sanitize_last_message(this.profile.last_message);
 
     const info_html = `
-			<div class='chat-profile-info'>
-				<div class='chat-name'>
-					${__(this.profile.room_name)} 
-					<div class='chat-latest' 
-						style='display: ${this.profile.is_read ? 'none' : 'inline-block'}'
-					></div>
-				</div>
-				<div style='color: ${this.profile.is_read ? 'var(--text-muted)' : 'var(--text-color)'
-      }' class='last-message'>${__(last_message)}</div>
-			</div>
-		`;
+        <div class='chat-profile-info'>
+            <div class='chat-name'>
+                ${__(this.profile.room_name)} 
+                <div class='chat-latest' style='display: ${this.profile.is_read ? 'none' : 'inline-block'}'>
+                </div>
+            </div>
+            <div style='color: ${this.profile.is_read ? 'var(--text-muted)' : 'var(--text-color)'}' class='last-message'>
+                ${__(last_message)}
+            </div>
+        </div>
+        `;
     const date_html = `
 			<div class='chat-date'>
 				${__(get_date_from_now(this.profile.last_date, 'room'))}
