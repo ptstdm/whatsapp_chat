@@ -17,19 +17,8 @@ def settings(token):
     }
 
     config = {**config, **get_chat_settings()}
-
-    if config['is_admin']:
-        config['user'] = get_admin_name(config['user_email'])
-        config['user_settings'] = get_user_settings()
-    else:
-        config['user'] = 'Guest'
-        token_verify = validate_token(token)
-        if token_verify[0] is True:
-            config['room'] = token_verify[1]['room']
-            config['user_email'] = token_verify[1]['email']
-            config['is_verified'] = True
-        else:
-            config['is_verified'] = False
+    config['user'] = get_admin_name(config['user_email'])
+    config['user_settings'] = get_user_settings()
 
     return config
 
