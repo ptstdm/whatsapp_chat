@@ -35,23 +35,30 @@ export default class ChatSpace {
       this.profile.room_name
     );
     const header_html = `
-			<div class='chat-header'>
-				${this.profile.is_admin === true
-        ? `<span class='chat-back-button' title='${__('Go Back')}' >
-								${frappe.utils.icon('left')}
-							</span>`
-        : ``
-      }
-				${this.avatar_html}
-				<div class='chat-profile-info'>
-					<div class='chat-profile-name'>
-					${__(this.profile.room_name)}
-					<div class='online-circle'></div>
-					</div>
-					<div class='chat-profile-status'>${__('Typing...')}</div>
+		<div class='chat-header'>
+			${this.profile.is_admin === true
+			? `<span class='chat-back-button' title='${__('Go Back')}' >
+							${frappe.utils.icon('left')}
+						</span>`
+			: ``
+		}
+			${this.avatar_html}
+			<div class='chat-profile-info'>
+				<div class='chat-profile-name'>
+					<a href='#' onclick='navigateToContact()'>    
+						${__(this.profile.room_name)}
+					</a>
+				<div class='online-circle'></div>
 				</div>
+				<div class='chat-profile-status'>${__('Typing...')}</div>
 			</div>
-		`;
+		</div>
+	`;
+	// Add this function to handle navigation
+	window.navigateToContact = () => {
+		const url = `/app/whatsapp-contact/${this.profile.room}`;
+		window.open(url, '_blank'); // Open in a new tab
+	};
     this.$chat_space.append(header_html);
   }
 
