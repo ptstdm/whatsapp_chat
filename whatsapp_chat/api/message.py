@@ -96,7 +96,10 @@ def last_message(doc, method):
             "message_type": doc.type,
             "is_read": 0
         })
-        chat_doc.save(ignore_permissions=True)
+        if doc.type == 'Outgoing':
+            chat_doc.db_update()
+        else:
+            chat_doc.save(ignore_permissions=True)
 
     if chat_doc.email and doc.type != 'Outgoing':
         frappe.publish_realtime(
