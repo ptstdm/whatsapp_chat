@@ -86,7 +86,10 @@ def last_message(doc, method):
         chat_doc.message_type = doc.type
         if chat_doc.contact_name[-10:] == mobile_no and doc.get("profile_name"):
             chat_doc.contact_name = doc.get("profile_name")
-        chat_doc.save(ignore_permissions=True)
+        if doc.type == 'Outgoing':
+            chat_doc.db_update()
+        else:
+            chat_doc.save(ignore_permissions=True)
     else:
         chat_doc = frappe.get_doc({
             "doctype": "WhatsApp Contact",
@@ -96,10 +99,7 @@ def last_message(doc, method):
             "message_type": doc.type,
             "is_read": 0
         })
-        if doc.type == 'Outgoing':
-            chat_doc.db_update()
-        else:
-            chat_doc.save(ignore_permissions=True)
+        chat_doc.insert(ignore_permissions=True)
 
     if chat_doc.email and doc.type != 'Outgoing':
         frappe.publish_realtime(
