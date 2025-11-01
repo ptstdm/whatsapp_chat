@@ -25,7 +25,7 @@ def get(email):
     mobile_nos = frappe.db.sql("""
         SELECT RIGHT(`from`, 10) AS mobile_no 
         FROM `tabWhatsApp Message`
-        WHERE `from` IS NOT NULL AND creation >= NOW() - INTERVAL 1 DAY;
+        WHERE `from` IS NOT NULL AND creation >= CONVERT_TZ(NOW() - INTERVAL 1 DAY, 'UTC', 'Asia/Kolkata');
     """, as_list=True)
     
     mobile_nos = [no[0] for no in mobile_nos]
