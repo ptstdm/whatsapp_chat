@@ -22,9 +22,9 @@ def get_all(room: str, user_no: str):
             when content_type = 'text' then message
             else attach
         end as content
-        from `tabWhatsApp Message` where (`to` = %(user_no)s or `from` = %(user_no)s)
+        from `tabWhatsApp Message` where (RIGHT(`to`, 10) = %(user_no)s or RIGHT(`from`, 10) = %(user_no)s)
         order by creation asc
-    """, {"user_no": user_no}, as_dict=True)
+    """, {"user_no": user_no[-10:]}, as_dict=True)
 
 
 @frappe.whitelist()
