@@ -55,9 +55,23 @@ export default class ChatSpace {
 		</div>
 	`;
 	// Add this function to handle navigation
-	window.navigateToContact = () => {
-		const url = `/app/whatsapp-contact/${this.profile.room}`;
-		window.open(url, '_blank'); // Open in a new tab
+	window.navigateToContact = async () => {
+        const me = this;
+
+        // Find Contact by phone number matching room_name
+        const contact = await frappe.db.get_value('Contact', [
+            ["Contact Phone", "phone", "like", `%${me.profile.user_email}`]
+        ], 'name');
+		if (contact && contact.message && contact.message.name) {
+            const url = `/app/contact/${contact.message.name}`;
+            window.open(url, '_blank');
+        } else {
+            // If no contact found, show a message or navigate to contact list with filter
+            frappe.msgprint({
+                title: __('Contact Not Found'),
+                message: __('No contact found with phone number matching ${me.profile.room_name}')
+            });
+        }
 	};
     this.$chat_space.append(header_html);
   }
