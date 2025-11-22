@@ -1,4 +1,5 @@
 import frappe
+from frappe.utils import add_to_date, now_datetime
 
 
 @frappe.whitelist()
@@ -22,12 +23,22 @@ def get(email):
         "WhatsApp Contact", fields=["*"], order_by="creation desc"
     )
 
+    # Get datetime for 1 day ago
+    one_day_ago = add_to_date(now_datetime(), days=-1)
+
     mobile_nos = frappe.db.sql(
         """
-        SELECT RIGHT(`from`, 10) AS mobile_no 
+        SELECT DISTINCT RIGHT(`from`, 10) AS mobile_no 
         FROM `tabWhatsApp Message`
-        WHERE `from` IS NOT NULL AND creation >= CONVERT_TZ(NOW() - INTERVAL 1 DAY, 'UTC', 'Asia/Kolkata');
+        WHERE `from` IS NOT NULL 
+            AND TRIM(`from`) != ''
+            AND LENGTH(TRIM(`from`)) >= 10
+            AND creation >= %(one_day_ago)s
+        HAVING mobile_no IS NOT NULL 
+            AND mobile_no != ''
+        ORDER BY mobile_no;
     """,
+        {"one_day_ago": one_day_ago},
         as_list=True,
     )
 
