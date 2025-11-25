@@ -20,7 +20,7 @@ def create(contact_name, mobile_no, email):
 def get(email):
     """Get all contacts assigned to email."""
     contacts = frappe.db.get_list(
-        "WhatsApp Contact", fields=["*"], order_by="creation desc"
+        "WhatsApp Contact", fields=["*"], order_by="modified desc"
     )
 
     # Get datetime for 1 day ago
