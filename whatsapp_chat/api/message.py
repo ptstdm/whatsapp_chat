@@ -13,25 +13,33 @@ def get_all(room: str, user_no: str):
     """
     return frappe.db.sql(
         """
-        SELECT creation,
-            CASE
-                WHEN `to` <> '' THEN `to`
-                ELSE 'Administrator'
-            END AS sender_user_no,
-            CASE
-                WHEN content_type = 'text' THEN message
-                ELSE attach
-            END AS content
+    (
+        -- Row for text message (only if message exists)
+        SELECT
+            creation,
+            CASE WHEN `to` <> '' THEN `to` ELSE 'Administrator' END AS sender_user_no,
+            message AS content
         FROM `tabWhatsApp Message`
         WHERE
-            (RIGHT(`to`, 10) = %(user_no)s OR RIGHT(`from`, 10) = %(user_no)s)
-            AND
-            (
-            (content_type = 'text' AND message IS NOT NULL)
-            OR
-            (content_type <> 'text' AND attach IS NOT NULL)
-            )
-        ORDER BY creation ASC
+            message IS NOT NULL AND message <> ''
+            AND (RIGHT(`to`, 10) = %(user_no)s OR RIGHT(`from`, 10) = %(user_no)s)
+    )
+    
+    UNION ALL
+    
+    (
+        -- Row for attachment (only if attach exists)
+        SELECT
+            creation,
+            CASE WHEN `to` <> '' THEN `to` ELSE 'Administrator' END AS sender_user_no,
+            attach AS content
+        FROM `tabWhatsApp Message`
+        WHERE
+            attach IS NOT NULL AND attach <> ''
+            AND (RIGHT(`to`, 10) = %(user_no)s OR RIGHT(`from`, 10) = %(user_no)s)
+    )
+    
+    ORDER BY creation ASC
     """,
         {"user_no": user_no[-10:]},
         as_dict=True,
@@ -43,6 +51,17 @@ def mark_as_read(room):
     doc = frappe.get_doc("WhatsApp Contact", room)
     doc.is_read = 1
     doc.db_update()
+
+    mobile = doc.mobile_no[-10:]
+
+    # 1. Find all message names where last 10 digits of from_ match
+    message_names = frappe.db.get_list(
+        "WhatsApp Message", filters={"from": ["like", f"%{mobile}"]}, pluck="name"
+    )
+
+    # 2. Update each message individually
+    for name in message_names:
+        frappe.db.set_value("WhatsApp Message", name, {"status": "marked as read"})
 
     return "ok"
 
