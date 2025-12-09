@@ -36,7 +36,7 @@ export default class ChatRoom {
         <div class='chat-profile-info'>
             <div class='chat-name'>
                 ${__(this.profile.room_name)} 
-                <div class='chat-latest' style='display: ${this.profile.is_read ? 'none' : 'inline-block'}'>
+                <div class='chat-latest' style='display: ${(this.profile.is_read == 0 && this.profile.message_type === "Incoming")? 'inline-block': 'none'}'>
                 </div>
             </div>
             <div style='color: ${this.profile.is_read ? 'var(--text-muted)' : 'var(--text-color)'}' class='last-message'>
