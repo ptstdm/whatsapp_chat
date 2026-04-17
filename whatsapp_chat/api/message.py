@@ -167,7 +167,8 @@ def update_contact_on_message(mobile_no, message, message_type, profile_name, is
         chat_doc.message_type = message_type
         if not is_outgoing:
             chat_doc.is_read = 0
-        if chat_doc.contact_name[-10:] == mobile_no and profile_name:
+        current_contact_name = chat_doc.contact_name or ""
+        if current_contact_name[-10:] == mobile_no and profile_name:
             chat_doc.contact_name = profile_name
         if is_outgoing:
             chat_doc.db_update()
