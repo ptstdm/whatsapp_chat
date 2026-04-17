@@ -131,21 +131,46 @@ def last_message(doc, method):
     else:
         mobile_no = doc.get("from")
 
-    mobile_no = mobile_no[-10:]
+    if not mobile_no:
+        frappe.log_error(
+            title="WhatsApp Contact Update Skipped - Missing Mobile Number",
+            message=(
+                f"A WhatsApp message (ID: {doc.name}) was received but has no mobile number.\n\n"
+                f"Message Type : {doc.type}\n"
+                f"From         : {doc.get('from') or 'Not provided'}\n"
+                f"To           : {doc.to or 'Not provided'}\n\n"
+                "Action Taken : Contact update was skipped. Please check this message manually in WhatsApp Message list."
+            ),
+        )
+        return
 
+    frappe.enqueue(
+        "whatsapp_chat.api.message.update_contact_on_message",
+        queue="default",
+        mobile_no=mobile_no[-10:],
+        message=doc.message,
+        message_type=doc.type,
+        profile_name=doc.get("profile_name"),
+        is_outgoing=doc.type == "Outgoing",
+    )
+
+
+def update_contact_on_message(mobile_no, message, message_type, profile_name, is_outgoing):
     contact_name = frappe.db.get_value(
         "WhatsApp Contact",
-        filters={"mobile_no": ["like", f"%{mobile_no}"]},
+        filters={"mobile_no": ["like", f"%{mobile_no}"]},  
         order_by="modified desc",
     )
     if contact_name:
         chat_doc = frappe.get_doc("WhatsApp Contact", contact_name)
-        chat_doc.last_message = doc.message
-        chat_doc.is_read = 0
-        chat_doc.message_type = doc.type
-        if chat_doc.contact_name[-10:] == mobile_no and doc.get("profile_name"):
-            chat_doc.contact_name = doc.get("profile_name")
-        if doc.type == "Outgoing":
+        chat_doc.last_message = message
+        chat_doc.message_type = message_type
+        if not is_outgoing:
+            chat_doc.is_read = 0
+        current_contact_name = chat_doc.contact_name or ""
+        if current_contact_name[-10:] == mobile_no and profile_name:
+            chat_doc.contact_name = profile_name
+        if is_outgoing:
             chat_doc.db_update()
         else:
             chat_doc.save(ignore_permissions=True)
@@ -154,23 +179,21 @@ def last_message(doc, method):
             {
                 "doctype": "WhatsApp Contact",
                 "mobile_no": mobile_no,
-                "last_message": doc.message,
-                "contact_name": doc.get("profile_name") or mobile_no,
-                "message_type": doc.type,
+                "last_message": message,
+                "contact_name": profile_name or mobile_no,
+                "message_type": message_type,
                 "is_read": 0,
             }
         )
         chat_doc.insert(ignore_permissions=True)
 
-    if chat_doc.email and doc.type != "Outgoing":
+    if chat_doc.email and not is_outgoing:
         frappe.publish_realtime(
             "latest_chat_updates",
             {
-                "content": doc.message,
+                "content": message,
                 "creation": frappe.utils.now(),
                 "room": chat_doc.name,
             },
             user=chat_doc.email,
         )
-
-    return "ok"
