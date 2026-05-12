@@ -131,5 +131,11 @@ export default class ChatRoom {
       chat_list: this.chat_list,
       profile: this.profile,
     });
+    // Notify other app bundles (e.g. leanerp_whatsapp_chat) that a room opened
+    $(document).trigger('whatsapp:space_opened', {
+      room:      this.profile.room,
+      mobile_no: this.profile.user_email,
+      room_name: this.profile.room_name,
+    });
   }
 }

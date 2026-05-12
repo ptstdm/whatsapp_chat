@@ -6,6 +6,9 @@ import { get_rooms, mark_message_read, get_time } from './chat_utils';
 export default class ChatList {
   constructor(opts) {
     this.$wrapper = opts.$wrapper;
+    // In two-panel (full-screen) mode the caller passes a separate wrapper
+    // for ChatSpace so the left panel is never replaced by a chat view.
+    this.$space_wrapper = opts.$space_wrapper || opts.$wrapper;
     this.user = opts.user;
     this.user_email = opts.user_email;
     this.is_admin = opts.is_admin;
@@ -15,6 +18,7 @@ export default class ChatList {
   setup() {
     this.$chat_list = $(document.createElement('div'));
     this.$chat_list.addClass('chat-list');
+    this.chat_rooms = [];
     this.setup_header();
     this.setup_search();
     this.fetch_and_setup_rooms();
@@ -99,7 +103,7 @@ export default class ChatList {
       this.chat_rooms.push([
         profile.room,
         new ChatRoom({
-          $wrapper: this.$wrapper,
+          $wrapper: this.$space_wrapper,
           $chat_rooms_container: this.$chat_rooms_container,
           chat_list: this,
           element: profile,
@@ -133,7 +137,7 @@ export default class ChatList {
     this.chat_rooms.unshift([
       profile.room,
       new ChatRoom({
-        $wrapper: this.$wrapper,
+        $wrapper: this.$space_wrapper,
         $chat_rooms_container: this.$chat_rooms_container,
         chat_list: this,
         element: profile,
@@ -215,50 +219,53 @@ export default class ChatList {
 
       chat_room_item[1].set_last_message(message, res.creation);
 
-      // Check if user is in chat list or active chat space
-      if ($('.chat-list').is(':visible')) {
-        // User is viewing chat list
+      // In two-panel (full-screen) mode both .chat-list and .chat-space are
+      // visible simultaneously. Detect this by checking for .wa-panel-right.
+      const is_two_panel = $('.wa-panel-right').length > 0;
+      const right_panel_space = $('.wa-panel-right .chat-space');
+
+      if (is_two_panel) {
+        // Two-panel: check which room is open in the right panel
+        const current_room = right_panel_space.attr('data-current-room');
+
+        if (current_room === res.room) {
+          const active_chat_space = chat_room_item[1].chat_space;
+          if (active_chat_space && typeof active_chat_space.receive_message === 'function') {
+            active_chat_space.receive_message(res, get_time(res.creation));
+            mark_message_read(res.room);
+          }
+        } else if (res.sender_user_no !== me.user_email) {
+          chat_room_item[1].set_as_unread();
+        }
+
+        chat_room_item[1].move_to_top();
+        me.move_room_to_top(chat_room_item);
+        me.refresh_current_filter();
+      } else if ($('.chat-list').is(':visible')) {
+        // Floating widget: user is on the chat list screen
         if (res.sender_user_no !== me.user_email) {
           chat_room_item[1].set_as_unread();
         }
         chat_room_item[1].move_to_top();
         me.move_room_to_top(chat_room_item);
-
-        // refresh filter after message update
         me.refresh_current_filter();
-      }
-      else if ($('.chat-space').is(':visible')) {
-        // User is in an active chat room
+      } else if ($('.chat-space').is(':visible')) {
+        // Floating widget: user has a chat space open
         const current_room = $('.chat-space').attr('data-current-room');
 
         if (current_room === res.room) {
-          // Update the active chat space with new message
           const active_chat_space = chat_room_item[1].chat_space;
           if (active_chat_space && typeof active_chat_space.receive_message === 'function') {
-            // Add the message to the active chat
             active_chat_space.receive_message(res, get_time(res.creation));
-
-            // Mark as read since user is actively viewing this room
             mark_message_read(res.room);
           }
+        } else if (res.sender_user_no !== me.user_email) {
+          chat_room_item[1].set_as_unread();
+        }
 
-          // move room to top
-          chat_room_item[1].move_to_top();
-          me.move_room_to_top(chat_room_item);
-        }
-        else {
-          // Different room is open - mark as unread
-          if (res.sender_user_no !== me.user_email) {
-            chat_room_item[1].set_as_unread();
-          }
-          // Move room to top for background rooms too
-          chat_room_item[1].move_to_top();
-          me.move_room_to_top(chat_room_item);
-        }
-      }
-      else {
-        // Handle case when neither chat-list nor chat-space is visible
-        // This could happen if user is in settings or other screens
+        chat_room_item[1].move_to_top();
+        me.move_room_to_top(chat_room_item);
+      } else {
         if (res.sender_user_no !== me.user_email) {
           chat_room_item[1].set_as_unread();
         }
