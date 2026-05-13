@@ -436,6 +436,15 @@ export default class ChatSpace {
     // Set data attribute to track current room
     this.$chat_space.attr('data-current-room', this.profile.room);
 
+    // Fire AFTER the space is in the DOM so wa-linked-doc-container is reachable.
+    // Pass the specific element to avoid a global selector race across chat switches.
+    $(document).trigger('whatsapp:space_opened', {
+      room:       this.profile.room,
+      mobile_no:  this.profile.user_email,
+      room_name:  this.profile.room_name,
+      $container: this.$chat_space.find('.wa-linked-doc-container'),
+    });
+
     this.setup_events();
 
     scroll_to_bottom(this.$chat_space_container);

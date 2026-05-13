@@ -108,8 +108,15 @@ export default class ChatRoom {
         // Chat space exists, just refresh the messages
         const refreshed = await this.chat_space.refresh_messages();
         if (refreshed) {
-          // Show the existing chat space
+          // Show the existing chat space and re-fire the event so the
+          // linked-doc button updates for this contact.
           this.chat_space.$chat_space.show();
+          $(document).trigger('whatsapp:space_opened', {
+            room:       this.profile.room,
+            mobile_no:  this.profile.user_email,
+            room_name:  this.profile.room_name,
+            $container: this.chat_space.$chat_space.find('.wa-linked-doc-container'),
+          });
         } else {
           // If refresh failed, create new instance
           this.create_new_chat_space();
@@ -131,11 +138,6 @@ export default class ChatRoom {
       chat_list: this.chat_list,
       profile: this.profile,
     });
-    // Notify other app bundles (e.g. leanerp_whatsapp_chat) that a room opened
-    $(document).trigger('whatsapp:space_opened', {
-      room:      this.profile.room,
-      mobile_no: this.profile.user_email,
-      room_name: this.profile.room_name,
-    });
+    // Event is now fired inside ChatSpace.render() after the DOM is ready.
   }
 }
