@@ -108,15 +108,10 @@ export default class ChatRoom {
         // Chat space exists, just refresh the messages
         const refreshed = await this.chat_space.refresh_messages();
         if (refreshed) {
-          // Show the existing chat space and re-fire the event so the
-          // linked-doc button updates for this contact.
+          // Show the existing chat space. ChatSpace.render() (called inside
+          // refresh_messages) already triggers whatsapp:space_opened, so no
+          // further trigger is needed here.
           this.chat_space.$chat_space.show();
-          $(document).trigger('whatsapp:space_opened', {
-            room:       this.profile.room,
-            mobile_no:  this.profile.user_email,
-            room_name:  this.profile.room_name,
-            $container: this.chat_space.$chat_space.find('.wa-linked-doc-container'),
-          });
         } else {
           // If refresh failed, create new instance
           this.create_new_chat_space();
@@ -129,6 +124,9 @@ export default class ChatRoom {
         mark_message_read(this.profile.room);
         this.set_as_read();
       }
+
+      // Mobile: parent class drives single-panel layout (hides list, shows chat)
+      $('.wa-page').addClass('wa-chat-open');
     });
   }
 

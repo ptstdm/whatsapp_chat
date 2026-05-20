@@ -604,20 +604,24 @@ $height: 582px;
 }
 
 @media (max-width: 768px) {
-  .wa-panel-left {
-    width: 100%;
-    display: none;
-
-    &.wa-mobile-show {
+  .wa-page {
+    .wa-panel-left {
+      width: 100%;
       display: flex;
+    }
+    .wa-panel-right {
+      width: 100%;
+      display: none;
+    }
+
+    // Chat-open state: hide list, show chat space
+    &.wa-chat-open {
+      .wa-panel-left  { display: none; }
+      .wa-panel-right { display: flex; }
     }
   }
 
-  .wa-panel-right {
-    width: 100%;
-
-    .chat-back-button {
-      display: flex !important;
-    }
+  .chat-back-button {
+    display: flex !important;
   }
 }

@@ -247,6 +247,9 @@ export default class ChatSpace {
     };
 
     $('.chat-back-button').on('click', function () {
+      // Mobile: return to chat list (CSS hides right panel when class removed)
+      $('.wa-page').removeClass('wa-chat-open');
+      // Legacy: re-render chat list (safe no-op in two-panel mode)
       me.chat_list.render_messages();
       me.chat_list.render();
     });
