@@ -35,44 +35,24 @@ export default class ChatSpace {
       this.profile.room_name
     );
     const header_html = `
-		<div class='chat-header'>
-			${this.profile.is_admin === true
-			? `<span class='chat-back-button' title='${__('Go Back')}' >
-							${frappe.utils.icon('left')}
-						</span>`
-			: ``
-		}
-			${this.avatar_html}
-			<div class='chat-profile-info'>
-				<div class='chat-profile-name'>
-					<a href='#' onclick='navigateToContact()'>    
-						${__(this.profile.room_name)}
-					</a>
-				<div class='online-circle'></div>
-				</div>
-				<div class='chat-profile-status'>${__('Typing...')}</div>
-			</div>
-		</div>
-	`;
-	// Add this function to handle navigation
-	window.navigateToContact = async () => {
-        const me = this;
-
-        // Find Contact by phone number matching room_name
-        const contact = await frappe.db.get_value('Contact', [
-            ["Contact Phone", "phone", "like", `%${me.profile.user_email}`]
-        ], 'name');
-		if (contact && contact.message && contact.message.name) {
-            const url = `/app/contact/${contact.message.name}`;
-            window.open(url, '_blank');
-        } else {
-            // If no contact found, show a message or navigate to contact list with filter
-            frappe.msgprint({
-                title: __('Contact Not Found'),
-                message: __('No contact found with phone number matching ${me.profile.room_name}')
-            });
+      <div class='chat-header'>
+        ${this.profile.is_admin === true
+          ? `<span class='chat-back-button' title='${__('Go Back')}'>
+               ${frappe.utils.icon('left')}
+             </span>`
+          : ''
         }
-	};
+        ${this.avatar_html}
+        <div class='chat-profile-info'>
+          <div class='chat-profile-name'>
+            ${__(this.profile.room_name)}
+            <div class='online-circle'></div>
+          </div>
+          <div class='chat-profile-status'>${__('Typing...')}</div>
+        </div>
+        <div class='wa-linked-doc-container'></div>
+      </div>
+    `;
     this.$chat_space.append(header_html);
   }
 
@@ -267,6 +247,9 @@ export default class ChatSpace {
     };
 
     $('.chat-back-button').on('click', function () {
+      // Mobile: return to chat list (CSS hides right panel when class removed)
+      $('.wa-page').removeClass('wa-chat-open');
+      // Legacy: re-render chat list (safe no-op in two-panel mode)
       me.chat_list.render_messages();
       me.chat_list.render();
     });
@@ -455,6 +438,15 @@ export default class ChatSpace {
 
     // Set data attribute to track current room
     this.$chat_space.attr('data-current-room', this.profile.room);
+
+    // Fire AFTER the space is in the DOM so wa-linked-doc-container is reachable.
+    // Pass the specific element to avoid a global selector race across chat switches.
+    $(document).trigger('whatsapp:space_opened', {
+      room:       this.profile.room,
+      mobile_no:  this.profile.user_email,
+      room_name:  this.profile.room_name,
+      $container: this.$chat_space.find('.wa-linked-doc-container'),
+    });
 
     this.setup_events();
 

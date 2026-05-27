@@ -28,13 +28,13 @@ def get(email):
 
     mobile_nos = frappe.db.sql(
         """
-        SELECT DISTINCT RIGHT(`from`, 10) AS mobile_no 
+        SELECT DISTINCT RIGHT(`from`, 10) AS mobile_no
         FROM `tabWhatsApp Message`
-        WHERE `from` IS NOT NULL 
+        WHERE `from` IS NOT NULL
             AND TRIM(`from`) != ''
             AND LENGTH(TRIM(`from`)) >= 10
             AND creation >= %(one_day_ago)s
-        HAVING mobile_no IS NOT NULL 
+        HAVING mobile_no IS NOT NULL
             AND mobile_no != ''
         ORDER BY mobile_no;
     """,
