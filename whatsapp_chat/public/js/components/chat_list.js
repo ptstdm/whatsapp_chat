@@ -126,6 +126,13 @@ export default class ChatList {
       this.sender_index = {};
       console.error(error);
     }
+
+    // If the user picked a sender before the index finished loading,
+    // on_sender_change() stored an empty Set — re-apply it now that the
+    // index is ready so the list reflects the active selection.
+    if (this.sentby_control && this.sentby_control.get_value()) {
+      this.on_sender_change();
+    }
   }
 
   setup_rooms() {
@@ -250,7 +257,12 @@ export default class ChatList {
         element: profile,
       }),
     ]);
-    this.chat_rooms[0][1].render('prepend');
+    if (this.sort_by === 'latest') {
+      this.chat_rooms[0][1].render('prepend');
+    } else {
+      // Respect the active sort for newly created rooms too.
+      this.sort_rooms();
+    }
   }
 
   setup_events() {
@@ -336,6 +348,18 @@ export default class ChatList {
     ];
   }
 
+  // Reorder the list after a realtime update. Moving to the top is only correct
+  // for the default "latest" sort; for any other sort, re-run sort_rooms() so a
+  // live update doesn't break the user's chosen order (name / oldest / unread).
+  reorder_room(chat_room_item) {
+    if (this.sort_by === 'latest') {
+      chat_room_item[1].move_to_top();
+      this.move_room_to_top(chat_room_item);
+    } else {
+      this.sort_rooms();
+    }
+  }
+
   setup_socketio() {
     const me = this;
     frappe.realtime.on('latest_chat_updates', function (res) {
@@ -375,16 +399,14 @@ export default class ChatList {
           chat_room_item[1].set_as_unread();
         }
 
-        chat_room_item[1].move_to_top();
-        me.move_room_to_top(chat_room_item);
+        me.reorder_room(chat_room_item);
         me.refresh_current_filter();
       } else if ($('.chat-list').is(':visible')) {
         // Floating widget: user is on the chat list screen
         if (res.sender_user_no !== me.user_email) {
           chat_room_item[1].set_as_unread();
         }
-        chat_room_item[1].move_to_top();
-        me.move_room_to_top(chat_room_item);
+        me.reorder_room(chat_room_item);
         me.refresh_current_filter();
       } else if ($('.chat-space').is(':visible')) {
         // Floating widget: user has a chat space open
@@ -400,14 +422,12 @@ export default class ChatList {
           chat_room_item[1].set_as_unread();
         }
 
-        chat_room_item[1].move_to_top();
-        me.move_room_to_top(chat_room_item);
+        me.reorder_room(chat_room_item);
       } else {
         if (res.sender_user_no !== me.user_email) {
           chat_room_item[1].set_as_unread();
         }
-        chat_room_item[1].move_to_top();
-        me.move_room_to_top(chat_room_item);
+        me.reorder_room(chat_room_item);
       }
     });
 
