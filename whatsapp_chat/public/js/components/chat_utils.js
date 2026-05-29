@@ -67,6 +67,16 @@ async function get_messages(room, user_no) {
   return await res.message;
 }
 
+async function get_room_senders(phones) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.message.get_room_senders',
+    args: {
+      phones: JSON.stringify(phones || []),
+    },
+  });
+  return (await res.message) || [];
+}
+
 async function send_message(content, user, room, user_no, attachment) {
   try {
     await frappe.call({
@@ -191,6 +201,7 @@ export {
   scroll_to_bottom,
   get_rooms,
   get_messages,
+  get_room_senders,
   get_settings,
   create_guest,
   send_message,

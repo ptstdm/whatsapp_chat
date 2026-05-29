@@ -21,8 +21,11 @@ frappe.standard_pages['whatsapp'] = function () {
   frappe.Chat._setup_page_layout(wrapper);
 
   $(wrapper).bind('show', function () {
+    frappe.Chat._fit_height();
     frappe.Chat._handle_route_params();
   });
+
+  $(window).off('resize.wa_chat').on('resize.wa_chat', () => frappe.Chat._fit_height());
 };
 
 frappe.Chat = class {
@@ -71,18 +74,32 @@ frappe.Chat = class {
   static _setup_page_layout(wrapper) {
     const page = wrapper.page;
     const $main = $(page.main).addClass('wa-main').empty();
+    const $filter_bar = $('<div class="wa-filters-bar"></div>');
     const $wa_page = $('<div class="wa-page"></div>');
     const $left   = $('<div class="wa-panel-left"></div>');
     const $right  = $('<div class="wa-panel-right"></div>');
 
     $right.html(frappe.Chat._empty_state_html());
     $wa_page.append($left, $right);
-    $main.append($wa_page);
+    $main.append($filter_bar, $wa_page);
 
-    frappe.Chat._init_chat_list($left, $right);
+    frappe.Chat._fit_height();
+    frappe.Chat._init_chat_list($left, $right, $filter_bar);
   }
 
-  static async _init_chat_list($left, $right) {
+  // Size the chat area to exactly fill from its top to the viewport bottom, so
+  // the message input is always visible (no page scrollbar). Measured at runtime
+  // because the page-head/navbar heights vary by theme.
+  static _fit_height() {
+    const $main = $('.wa-main');
+    if (!$main.length) return;
+    const top = $main[0].getBoundingClientRect().top;
+    if (top > 0) {
+      $main.css('height', `calc(100vh - ${Math.round(top)}px)`);
+    }
+  }
+
+  static async _init_chat_list($left, $right, $filter_bar) {
     if (frappe.Chat._page_ready) return;
 
     let res = frappe.Chat._config;
@@ -98,11 +115,12 @@ frappe.Chat = class {
     if (!res || !res.is_admin) return;
 
     frappe.Chat._chat_list = new ChatList({
-      $wrapper:       $left,
-      $space_wrapper: $right,
-      user:           res.user,
-      user_email:     res.user_email,
-      is_admin:       res.is_admin,
+      $wrapper:         $left,
+      $space_wrapper:   $right,
+      $filters_wrapper: $filter_bar,
+      user:             res.user,
+      user_email:       res.user_email,
+      is_admin:         res.is_admin,
     });
     frappe.Chat._chat_list.render();
     frappe.Chat._page_ready = true;
