@@ -16,32 +16,67 @@ def get_all(room: str, user_no: str):
     (
         -- Row for text message (only if message exists)
         SELECT
-            creation,
-            CASE WHEN `to` <> '' THEN `to` ELSE 'Administrator' END AS sender_user_no,
-            message AS content
-        FROM `tabWhatsApp Message`
+            m.creation,
+            CASE WHEN m.`to` <> '' THEN m.`to` ELSE 'Administrator' END AS sender_user_no,
+            m.message AS content,
+            m.type AS type,
+            COALESCE(u.full_name, m.owner) AS sent_by
+        FROM `tabWhatsApp Message` m
+        LEFT JOIN `tabUser` u ON u.name = m.owner
         WHERE
-            message IS NOT NULL AND message <> ''
-            AND (RIGHT(`to`, 10) = %(user_no)s OR RIGHT(`from`, 10) = %(user_no)s)
+            m.message IS NOT NULL AND m.message <> ''
+            AND (RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)
     )
-    
+
     UNION ALL
-    
+
     (
         -- Row for attachment (only if attach exists)
         SELECT
-            creation,
-            CASE WHEN `to` <> '' THEN `to` ELSE 'Administrator' END AS sender_user_no,
-            attach AS content
-        FROM `tabWhatsApp Message`
+            m.creation,
+            CASE WHEN m.`to` <> '' THEN m.`to` ELSE 'Administrator' END AS sender_user_no,
+            m.attach AS content,
+            m.type AS type,
+            COALESCE(u.full_name, m.owner) AS sent_by
+        FROM `tabWhatsApp Message` m
+        LEFT JOIN `tabUser` u ON u.name = m.owner
         WHERE
-            attach IS NOT NULL AND attach <> ''
-            AND (RIGHT(`to`, 10) = %(user_no)s OR RIGHT(`from`, 10) = %(user_no)s)
+            m.attach IS NOT NULL AND m.attach <> ''
+            AND (RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)
     )
-    
+
     ORDER BY creation ASC
     """,
         {"user_no": user_no[-10:]},
+        as_dict=True,
+    )
+
+
+@frappe.whitelist()
+def get_room_senders(phones=None):
+    """Return distinct (owner, `to`) pairs for outgoing messages to the given phone numbers, so the
+    client can build an owner -> rooms index for the 'Sent by' filter. Scoped to the numbers passed
+    in (the rooms actually shown — contacts with an incoming message in the last 24h), so we don't
+    scan/return senders for rooms that aren't displayed. The client maps each `to` to a loaded room
+    by last-10-digit match (no non-indexable RIGHT()=RIGHT() join).
+
+    Args:
+        phones: JSON list of last-10-digit phone numbers for the displayed rooms.
+    """
+    phones = frappe.parse_json(phones) if phones else []
+    phones = [p for p in phones if p]
+    if not phones:
+        return []
+
+    return frappe.db.sql(
+        """
+        SELECT DISTINCT owner, `to`
+        FROM `tabWhatsApp Message`
+        WHERE type = 'Outgoing'
+          AND `to` <> ''
+          AND RIGHT(`to`, 10) IN %(phones)s
+        """,
+        {"phones": tuple(phones)},
         as_dict=True,
     )
 

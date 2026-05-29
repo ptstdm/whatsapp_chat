@@ -74,6 +74,9 @@ export default class ChatRoom {
   }
 
   set_last_message(message, date) {
+    // Keep last_date current so time-based sorts (latest/oldest) re-sort correctly
+    // when sort_rooms() runs after a realtime update.
+    this.profile.last_date = date;
     const sanitized_message = this.sanitize_last_message(message);
     this.$chat_room.find('.last-message').html(__(sanitized_message));
     this.$chat_room.find('.chat-date').text(__(get_time(date)));
@@ -103,7 +106,9 @@ export default class ChatRoom {
   }
 
   setup_events() {
-    this.$chat_room.on('click', async () => {
+    // off() first so repeated re-renders (e.g. sort_rooms on realtime updates)
+    // don't stack duplicate click handlers on the same element.
+    this.$chat_room.off('click').on('click', async () => {
       if (typeof this.chat_space !== 'undefined') {
         // Chat space exists, just refresh the messages
         const refreshed = await this.chat_space.refresh_messages();

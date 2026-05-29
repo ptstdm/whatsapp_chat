@@ -100,20 +100,28 @@ export default class ChatSpace {
       const date_line_html = this.make_date_line_html(element.creation);
       this.message_html += date_line_html;
 
-      let message_type = 'sender';
-
-      if (element.sender_user_no === this.profile.user_email) {
+      let message_type;
+      if (element.type === 'Outgoing') {
         message_type = 'recipient';
-      } else if (this.profile.room_type === 'Guest') {
-        if (this.profile.is_admin === true && element.sender !== 'Guest') {
+      } else if (element.type === 'Incoming') {
+        message_type = 'sender';
+      } else {
+        // Fallback: legacy/guest rows without an explicit type
+        message_type = 'sender';
+        if (element.sender_user_no === this.profile.user_email) {
           message_type = 'recipient';
+        } else if (this.profile.room_type === 'Guest') {
+          if (this.profile.is_admin === true && element.sender !== 'Guest') {
+            message_type = 'recipient';
+          }
         }
       }
       this.message_html += this.make_message(
         element.content,
         get_time(element.creation),
         message_type,
-        element.sender
+        element.sender,
+        element.sent_by
       ).prop('outerHTML');
 
       this.prevMessage = element;
@@ -310,7 +318,7 @@ export default class ChatSpace {
     }
   }
 
-  make_message(content, time, type, name) {
+  make_message(content, time, type, name, sent_by) {
     const message_class =
       type === 'recipient' ? 'recipient-message' : 'sender-message';
     const $recipient_element = $(document.createElement('div')).addClass(
@@ -356,7 +364,20 @@ export default class ChatSpace {
     }
     $message_element.append($sanitized_content);
     $recipient_element.append($message_element);
-    $recipient_element.append(`<div class='message-time'>${__(time)}</div>`);
+
+    if (type === 'recipient' && sent_by) {
+      $recipient_element.append(
+        $('<div class="message-meta"></div>')
+          .append(
+            $('<span class="message-sender"></span>').text(
+              __('Sent by {0}', [sent_by])
+            )
+          )
+          .append($('<span class="message-time"></span>').text(__(time)))
+      );
+    } else {
+      $recipient_element.append(`<div class='message-time'>${__(time)}</div>`);
+    }
 
     return $recipient_element;
   }
@@ -387,7 +408,13 @@ export default class ChatSpace {
     }
 
     this.$chat_space_container.append(
-      this.make_message(content, get_time(), 'recipient', this.profile.user)
+      this.make_message(
+        content,
+        get_time(),
+        'recipient',
+        this.profile.user,
+        frappe.user.full_name()
+      )
     );
     $type_message.val('');
     scroll_to_bottom(this.$chat_space_container);
