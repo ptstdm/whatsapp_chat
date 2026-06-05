@@ -2,54 +2,97 @@ import mimetypes
 
 import frappe
 
+# Roles that may reply to any chat. Everyone can *view* every chat; replying is
+# restricted to managers, the chat's owner, or unassigned (shared-pool) chats.
+MANAGER_ROLES = {"System Manager", "Sales Manager", "WhatsApp Agent"}
+
+
+def can_reply_to_contact(contact_email):
+    """Whether the current user may reply to a chat owned by `contact_email`."""
+    if MANAGER_ROLES & set(frappe.get_roles(frappe.session.user)):
+        return True
+    # Unassigned (shared pool) or owned by the current user.
+    return not contact_email or contact_email == frappe.session.user
+
+
+def _contact_email_by_number(to):
+    if not to:
+        return None
+    return frappe.db.get_value(
+        "WhatsApp Contact",
+        {"mobile_no": ["like", f"%{to[-10:]}"]},
+        "email",
+        order_by="modified desc",
+    )
+
+
+def assert_can_reply_number(to):
+    if not can_reply_to_contact(_contact_email_by_number(to)):
+        frappe.throw(
+            frappe._("This chat is assigned to another agent — view only."),
+            frappe.PermissionError,
+        )
+
 
 @frappe.whitelist()
-def get_all(room: str, user_no: str):
-    """Get all the messages of a particular room
+def get_all(room: str, user_no: str, limit=30, before=None):
+    """Get a page of a room's messages for lazy/infinite scroll.
+
+    Returns the newest `limit` rows (text + attachment), in ascending order for
+    display. Pass `before` (a creation timestamp) to fetch the next older page.
 
     Args:
         room (str): Room's name.
-
+        user_no (str): Counterpart phone number.
+        limit (int): Page size.
+        before (str|None): Only rows older than this creation timestamp.
     """
-    return frappe.db.sql(
+    limit = int(limit)
+    # frappe.call() JSON-encodes args, so a JS `null` arrives as the string "null".
+    if before in (None, "", "null", "undefined"):
+        before = None
+    rows = frappe.db.sql(
         """
-    (
-        -- Row for text message (only if message exists)
-        SELECT
-            m.creation,
-            CASE WHEN m.`to` <> '' THEN m.`to` ELSE 'Administrator' END AS sender_user_no,
-            m.message AS content,
-            m.type AS type,
-            COALESCE(u.full_name, m.owner) AS sent_by
-        FROM `tabWhatsApp Message` m
-        LEFT JOIN `tabUser` u ON u.name = m.owner
-        WHERE
-            m.message IS NOT NULL AND m.message <> ''
-            AND (RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)
-    )
-
-    UNION ALL
-
-    (
-        -- Row for attachment (only if attach exists)
-        SELECT
-            m.creation,
-            CASE WHEN m.`to` <> '' THEN m.`to` ELSE 'Administrator' END AS sender_user_no,
-            m.attach AS content,
-            m.type AS type,
-            COALESCE(u.full_name, m.owner) AS sent_by
-        FROM `tabWhatsApp Message` m
-        LEFT JOIN `tabUser` u ON u.name = m.owner
-        WHERE
-            m.attach IS NOT NULL AND m.attach <> ''
-            AND (RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)
-    )
-
-    ORDER BY creation ASC
-    """,
-        {"user_no": user_no[-10:]},
+        SELECT * FROM (
+            (
+                -- Row for text message (only if message exists)
+                SELECT
+                    m.creation,
+                    CASE WHEN m.`to` <> '' THEN m.`to` ELSE 'Administrator' END AS sender_user_no,
+                    m.message AS content,
+                    m.type AS type,
+                    COALESCE(u.full_name, m.owner) AS sent_by
+                FROM `tabWhatsApp Message` m
+                LEFT JOIN `tabUser` u ON u.name = m.owner
+                WHERE
+                    m.message IS NOT NULL AND m.message <> ''
+                    AND (RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)
+            )
+            UNION ALL
+            (
+                -- Row for attachment (only if attach exists)
+                SELECT
+                    m.creation,
+                    CASE WHEN m.`to` <> '' THEN m.`to` ELSE 'Administrator' END AS sender_user_no,
+                    m.attach AS content,
+                    m.type AS type,
+                    COALESCE(u.full_name, m.owner) AS sent_by
+                FROM `tabWhatsApp Message` m
+                LEFT JOIN `tabUser` u ON u.name = m.owner
+                WHERE
+                    m.attach IS NOT NULL AND m.attach <> ''
+                    AND (RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)
+            )
+        ) AS u
+        WHERE (%(before)s IS NULL OR u.creation < %(before)s)
+        ORDER BY u.creation DESC
+        LIMIT %(limit)s
+        """,
+        {"user_no": user_no[-10:], "before": before, "limit": limit},
         as_dict=True,
     )
+    rows.reverse()  # ascending for display
+    return rows
 
 
 @frappe.whitelist()
@@ -84,6 +127,10 @@ def get_room_senders(phones=None):
 @frappe.whitelist()
 def mark_as_read(room):
     doc = frappe.get_doc("WhatsApp Contact", room)
+    # A read-only viewer (non-owner, non-manager) opening someone else's chat
+    # must not clear the owner's unread state — skip silently.
+    if not can_reply_to_contact(doc.email):
+        return "skipped"
     doc.is_read = 1
     doc.db_update()
 
@@ -103,6 +150,7 @@ def mark_as_read(room):
 
 @frappe.whitelist()
 def send(content, user, room, user_no, attachment=None):
+    assert_can_reply_number(user_no)
     content_type = "text"
     if attachment:
         file_type = mimetypes.guess_type(content)[0]
@@ -187,10 +235,12 @@ def last_message(doc, method):
         message_type=doc.type,
         profile_name=doc.get("profile_name"),
         is_outgoing=doc.type == "Outgoing",
+        owner=doc.owner,
+        message_id=doc.name,
     )
 
 
-def update_contact_on_message(mobile_no, message, message_type, profile_name, is_outgoing):
+def update_contact_on_message(mobile_no, message, message_type, profile_name, is_outgoing, owner=None, message_id=None):
     contact_name = frappe.db.get_value(
         "WhatsApp Contact",
         filters={"mobile_no": ["like", f"%{mobile_no}"]},  
@@ -222,13 +272,19 @@ def update_contact_on_message(mobile_no, message, message_type, profile_name, is
         )
         chat_doc.insert(ignore_permissions=True)
 
-    if chat_doc.email and not is_outgoing:
+    # Push every message (incoming AND outgoing) so the open chat reflects
+    # AI/other-agent/template replies live and the list preview/order updates.
+    if chat_doc.email:
         frappe.publish_realtime(
             "latest_chat_updates",
             {
                 "content": message,
                 "creation": frappe.utils.now(),
                 "room": chat_doc.name,
+                "type": message_type,
+                "owner": owner,
+                "message_id": message_id,
+                "sender_user_no": None if is_outgoing else mobile_no,
             },
             user=chat_doc.email,
         )

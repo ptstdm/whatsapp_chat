@@ -56,12 +56,14 @@ async function get_rooms(email) {
   return await res.message;
 }
 
-async function get_messages(room, user_no) {
+async function get_messages(room, user_no, limit = 30, before = null) {
   const res = await frappe.call({
     method: 'whatsapp_chat.api.message.get_all',
     args: {
       room: room,
       user_no: user_no,
+      limit: limit,
+      before: before,
     },
   });
   return await res.message;
