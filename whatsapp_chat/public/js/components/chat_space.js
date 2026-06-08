@@ -68,8 +68,8 @@ export default class ChatSpace {
         this.page_size
       );
       // res is ascending; oldest is the first row. More history exists if we
-      // got a full page.
-      this.oldest_creation = res && res.length ? res[0].creation : null;
+      // got a full page. Track the composite cursor for the next older page.
+      this._set_oldest_cursor(res);
       this.has_more = !!(res && res.length === this.page_size);
       this.setup_messages(res);
       this.setup_actions();
@@ -449,6 +449,13 @@ export default class ChatSpace {
   }
 
   receive_message(res, time) {
+    // The same message can arrive on both the per-room channel and the
+    // owner-scoped `latest_chat_updates` channel — dedupe by message id.
+    if (res.message_id) {
+      this._seen_ids = this._seen_ids || new Set();
+      if (this._seen_ids.has(res.message_id)) return;
+      this._seen_ids.add(res.message_id);
+    }
     // Skip my own just-sent message — it was already appended optimistically.
     if (res.type === 'Outgoing' && res.owner && res.owner === frappe.session.user) {
       return;
@@ -508,23 +515,43 @@ export default class ChatSpace {
     scroll_to_bottom(this.$chat_space_container);
   }
 
+  // Track the composite "older than" cursor (creation, name, kind) from the
+  // oldest row of the current page (rows are ascending, so index 0).
+  _set_oldest_cursor(rows) {
+    if (rows && rows.length) {
+      const o = rows[0];
+      this._oldest = { before: o.creation, before_name: o.name, before_kind: o.kind };
+      this.oldest_creation = o.creation;
+    } else {
+      this._oldest = null;
+      this.oldest_creation = null;
+    }
+  }
+
   async load_older_messages() {
-    if (this.loading_older || !this.has_more || !this.oldest_creation) return;
+    if (this.loading_older || !this.has_more || !this._oldest) return;
     this.loading_older = true;
     try {
+      const prevOldestCreation = this._oldest.before;
       const older = await get_messages(
         this.profile.room,
         this.profile.user_email,
         this.page_size,
-        this.oldest_creation
+        this._oldest
       );
       if (older && older.length) {
         const sc = this.$chat_space_container[0];
         const prevHeight = sc.scrollHeight;
+        // If the page boundary is the same day, the existing leading date
+        // separator is now redundant (the older page re-establishes it) — drop it.
+        const lastOld = older[older.length - 1];
+        if (prevOldestCreation && !is_date_change(prevOldestCreation, lastOld.creation)) {
+          this.$chat_space_container.children('.date-line').first().remove();
+        }
         this.$chat_space_container.prepend(this.build_messages_html(older));
         // Keep the viewport anchored on the same message after prepending.
         sc.scrollTop = sc.scrollHeight - prevHeight;
-        this.oldest_creation = older[0].creation;
+        this._set_oldest_cursor(older);
         this.has_more = older.length === this.page_size;
       } else {
         this.has_more = false;
