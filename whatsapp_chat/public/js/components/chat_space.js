@@ -22,6 +22,10 @@ export default class ChatSpace {
   setup() {
     this.$chat_space = $(document.createElement('div'));
     this.typing = false;
+    this.page_size = 30;
+    this.oldest_creation = null;
+    this.has_more = true;
+    this.loading_older = false;
     this.$chat_space.addClass('chat-space');
     this.setup_header();
     this.fetch_and_setup_messages();
@@ -60,8 +64,13 @@ export default class ChatSpace {
     try {
       const res = await get_messages(
         this.profile.room,
-        this.profile.user_email
+        this.profile.user_email,
+        this.page_size
       );
+      // res is ascending; oldest is the first row. More history exists if we
+      // got a full page. Track the composite cursor for the next older page.
+      this._set_oldest_cursor(res);
+      this.has_more = !!(res && res.length === this.page_size);
       this.setup_messages(res);
       this.setup_actions();
       this.render();
@@ -84,9 +93,47 @@ export default class ChatSpace {
     this.$chat_space.append(this.$chat_space_container);
   }
 
+  // Which side a message bubble renders on.
+  _message_side(element) {
+    if (element.type === 'Outgoing') return 'recipient';
+    if (element.type === 'Incoming') return 'sender';
+    // Fallback: legacy/guest rows without an explicit type
+    if (element.sender_user_no === this.profile.user_email) return 'recipient';
+    if (
+      this.profile.room_type === 'Guest' &&
+      this.profile.is_admin === true &&
+      element.sender !== 'Guest'
+    ) {
+      return 'recipient';
+    }
+    return 'sender';
+  }
+
+  // Pure builder: returns the HTML for a list of messages (ascending), with
+  // date separators. Does not mutate this.prevMessage, so it is safe for both
+  // the initial render and prepending older pages.
+  build_messages_html(messages_list) {
+    let html = '';
+    let prev = {};
+    messages_list.forEach((element) => {
+      if ($.isEmptyObject(prev) || is_date_change(element.creation, prev.creation)) {
+        html += `<div class='date-line'><span>${__(
+          get_date_from_now(element.creation, 'space')
+        )}</span></div>`;
+      }
+      html += this.make_message(
+        element.content,
+        get_time(element.creation),
+        this._message_side(element),
+        element.sender,
+        element.sent_by
+      ).prop('outerHTML');
+      prev = element;
+    });
+    return html;
+  }
+
   make_messages_html(messages_list) {
-    this.prevMessage = {};
-    this.message_html = ``;
     if (this.profile.message) {
       messages_list.push(this.profile.message);
       send_message(
@@ -96,36 +143,10 @@ export default class ChatSpace {
         this.profile.user_email
       );
     }
-    messages_list.forEach((element) => {
-      const date_line_html = this.make_date_line_html(element.creation);
-      this.message_html += date_line_html;
-
-      let message_type;
-      if (element.type === 'Outgoing') {
-        message_type = 'recipient';
-      } else if (element.type === 'Incoming') {
-        message_type = 'sender';
-      } else {
-        // Fallback: legacy/guest rows without an explicit type
-        message_type = 'sender';
-        if (element.sender_user_no === this.profile.user_email) {
-          message_type = 'recipient';
-        } else if (this.profile.room_type === 'Guest') {
-          if (this.profile.is_admin === true && element.sender !== 'Guest') {
-            message_type = 'recipient';
-          }
-        }
-      }
-      this.message_html += this.make_message(
-        element.content,
-        get_time(element.creation),
-        message_type,
-        element.sender,
-        element.sent_by
-      ).prop('outerHTML');
-
-      this.prevMessage = element;
-    });
+    this.message_html = this.build_messages_html(messages_list);
+    this.prevMessage = messages_list.length
+      ? messages_list[messages_list.length - 1]
+      : {};
   }
 
   make_date_line_html(dateObj) {
@@ -428,19 +449,23 @@ export default class ChatSpace {
   }
 
   receive_message(res, time) {
-    // Don't add message if it's from the current user (avoid duplicates)
-    if (res.sender_user_no === this.profile.user_email) {
+    // The same message can arrive on both the per-room channel and the
+    // owner-scoped `latest_chat_updates` channel — dedupe by message id.
+    if (res.message_id) {
+      this._seen_ids = this._seen_ids || new Set();
+      if (this._seen_ids.has(res.message_id)) return;
+      this._seen_ids.add(res.message_id);
+    }
+    // Skip my own just-sent message — it was already appended optimistically.
+    if (res.type === 'Outgoing' && res.owner && res.owner === frappe.session.user) {
+      return;
+    }
+    // Legacy/guest rows without an explicit type: dedupe by counterpart number.
+    if (!res.type && res.sender_user_no === this.profile.user_email) {
       return;
     }
 
-    let chat_type = 'sender';
-
-    // Determine message type based on room type
-    if (this.profile.room_type === 'Guest') {
-      if (this.profile.is_admin === true && res.user !== 'Guest') {
-        chat_type = 'recipient';
-      }
-    }
+    const chat_type = this._message_side(res);
 
     // Add date separator if needed
     const date_line_html = this.make_date_line_html(res.creation);
@@ -450,11 +475,15 @@ export default class ChatSpace {
 
     // Add the new message
     this.$chat_space_container.append(
-      this.make_message(res.content, time, chat_type, res.user)
+      this.make_message(res.content, time, chat_type, res.user, res.sent_by)
     );
 
-    // Scroll to bottom to show new message
-    scroll_to_bottom(this.$chat_space_container);
+    // Only auto-scroll if the user is already near the bottom, so we don't
+    // yank them away while they're reading older history.
+    const sc = this.$chat_space_container[0];
+    if (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 150) {
+      scroll_to_bottom(this.$chat_space_container);
+    }
 
     // Update previous message for date line calculation
     this.prevMessage = res;
@@ -477,7 +506,60 @@ export default class ChatSpace {
 
     this.setup_events();
 
+    // Lazy-load older messages when the user scrolls near the top.
+    const me = this;
+    this.$chat_space_container.off('scroll.lazy').on('scroll.lazy', function () {
+      if (this.scrollTop <= 40) me.load_older_messages();
+    });
+
     scroll_to_bottom(this.$chat_space_container);
+  }
+
+  // Track the composite "older than" cursor (creation, name, kind) from the
+  // oldest row of the current page (rows are ascending, so index 0).
+  _set_oldest_cursor(rows) {
+    if (rows && rows.length) {
+      const o = rows[0];
+      this._oldest = { before: o.creation, before_name: o.name, before_kind: o.kind };
+      this.oldest_creation = o.creation;
+    } else {
+      this._oldest = null;
+      this.oldest_creation = null;
+    }
+  }
+
+  async load_older_messages() {
+    if (this.loading_older || !this.has_more || !this._oldest) return;
+    this.loading_older = true;
+    try {
+      const prevOldestCreation = this._oldest.before;
+      const older = await get_messages(
+        this.profile.room,
+        this.profile.user_email,
+        this.page_size,
+        this._oldest
+      );
+      if (older && older.length) {
+        const sc = this.$chat_space_container[0];
+        const prevHeight = sc.scrollHeight;
+        // If the page boundary is the same day, the existing leading date
+        // separator is now redundant (the older page re-establishes it) — drop it.
+        const lastOld = older[older.length - 1];
+        if (prevOldestCreation && !is_date_change(prevOldestCreation, lastOld.creation)) {
+          this.$chat_space_container.children('.date-line').first().remove();
+        }
+        this.$chat_space_container.prepend(this.build_messages_html(older));
+        // Keep the viewport anchored on the same message after prepending.
+        sc.scrollTop = sc.scrollHeight - prevHeight;
+        this._set_oldest_cursor(older);
+        this.has_more = older.length === this.page_size;
+      } else {
+        this.has_more = false;
+      }
+    } catch (error) {
+      console.error('Error loading older messages:', error);
+    }
+    this.loading_older = false;
   }
 
   async refresh_messages() {

@@ -56,12 +56,17 @@ async function get_rooms(email) {
   return await res.message;
 }
 
-async function get_messages(room, user_no) {
+async function get_messages(room, user_no, limit = 30, cursor = null) {
+  cursor = cursor || {};
   const res = await frappe.call({
     method: 'whatsapp_chat.api.message.get_all',
     args: {
       room: room,
       user_no: user_no,
+      limit: limit,
+      before: cursor.before || null,
+      before_name: cursor.before_name || null,
+      before_kind: cursor.before_kind != null ? cursor.before_kind : null,
     },
   });
   return await res.message;

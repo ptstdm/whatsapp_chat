@@ -79,6 +79,10 @@ export default class ChatList {
         <input type='checkbox' class='unread-filter-checkbox'>
         <span class='checkmark'>${__('Unread')}</span>
       </label>
+      <label class='unread-filter-container' title='${__('Show chats the AI agent has replied to')}'>
+        <input type='checkbox' class='ai-filter-checkbox'>
+        <span class='checkmark'>${__('AI chats')}</span>
+      </label>
     `;
   }
 
@@ -153,7 +157,8 @@ export default class ChatList {
         room_name: element.contact_name,
         room_type: element.type,
         opposite_person_email: element.mobile_no,
-        message_type: element.message_type
+        message_type: element.message_type,
+        ai_replied: element.ai_replied
       };
 
       this.chat_rooms.push([
@@ -169,17 +174,26 @@ export default class ChatList {
     this.$chat_list.append(this.$chat_rooms_container);
   }
 
-  filter_rooms(query, showOnlyUnread = false) {
+  filter_rooms(query, showOnlyUnread = false, showAiOnly = false) {
     let visibleCount = 0;
+    const qDigits = (query || '').replace(/\D/g, '');
     for (const room of this.chat_rooms) {
-      const txt = room[1].profile.room_name.toLowerCase();
-      const matchesSearch = query === '' || txt.includes(query);
+      const name_txt = (room[1].profile.room_name || '').toLowerCase();
+      const phone = String(room[1].profile.opposite_person_email || '').replace(/\D/g, '');
+      // Match on contact name OR phone number digits.
+      const matchesSearch = query === '' ||
+        name_txt.includes(query) ||
+        (qDigits && phone.includes(qDigits));
 
       let matchesFilter = true;
       if (showOnlyUnread) {
         // Show only unread incoming messages
         matchesFilter = room[1].profile.is_read === 0 &&
           room[1].profile.message_type === 'Incoming';
+      }
+      // Show only chats the AI agent has replied to
+      if (matchesFilter && showAiOnly) {
+        matchesFilter = room[1].profile.ai_replied === 1;
       }
 
       // Only chats with at least one outgoing message from the selected user
@@ -197,7 +211,7 @@ export default class ChatList {
     if (this.$empty_placeholder) {
       if (visibleCount === 0) {
         const filter_active =
-          query !== '' || showOnlyUnread || !!this.sender_room_set;
+          query !== '' || showOnlyUnread || showAiOnly || !!this.sender_room_set;
         const msg = filter_active
           ? __('No chats match this filter')
           : __('No conversations yet');
@@ -269,16 +283,17 @@ export default class ChatList {
     const me = this;
 
     $('.chat-search-box').on('input', function (e) {
-      const query = $(this).val().toLowerCase();
-      const showOnlyUnread = $('.unread-filter-checkbox').is(':checked');
-      me.filter_rooms(query, showOnlyUnread);
+      me.refresh_current_filter();
     });
 
     // Handle unread filter checkbox
     $('.unread-filter-checkbox').on('change', function (e) {
-      const showOnlyUnread = $(this).is(':checked');
-      const query = $('.chat-search-box').val().toLowerCase();
-      me.filter_rooms(query, showOnlyUnread);
+      me.refresh_current_filter();
+    });
+
+    // Handle "AI chats" filter checkbox
+    $('.ai-filter-checkbox').on('change', function (e) {
+      me.refresh_current_filter();
     });
 
     // Handle sort dropdown
@@ -372,11 +387,13 @@ export default class ChatList {
         return;
       }
 
-      frappe.utils.play_sound('chat-message-receive');
+      const isIncoming = res.type !== 'Outgoing';
+      if (isIncoming) {
+        frappe.utils.play_sound('chat-message-receive');
+      }
+      const content = res.content || '';
       const message =
-        res.content.length > 24
-          ? res.content.substring(0, 24) + '...'
-          : res.content;
+        content.length > 24 ? content.substring(0, 24) + '...' : content;
 
       chat_room_item[1].set_last_message(message, res.creation);
 
@@ -395,7 +412,7 @@ export default class ChatList {
             active_chat_space.receive_message(res, get_time(res.creation));
             mark_message_read(res.room);
           }
-        } else if (res.sender_user_no !== me.user_email) {
+        } else if (isIncoming && res.sender_user_no !== me.user_email) {
           chat_room_item[1].set_as_unread();
         }
 
@@ -403,7 +420,7 @@ export default class ChatList {
         me.refresh_current_filter();
       } else if ($('.chat-list').is(':visible')) {
         // Floating widget: user is on the chat list screen
-        if (res.sender_user_no !== me.user_email) {
+        if (isIncoming && res.sender_user_no !== me.user_email) {
           chat_room_item[1].set_as_unread();
         }
         me.reorder_room(chat_room_item);
@@ -418,13 +435,13 @@ export default class ChatList {
             active_chat_space.receive_message(res, get_time(res.creation));
             mark_message_read(res.room);
           }
-        } else if (res.sender_user_no !== me.user_email) {
+        } else if (isIncoming && res.sender_user_no !== me.user_email) {
           chat_room_item[1].set_as_unread();
         }
 
         me.reorder_room(chat_room_item);
       } else {
-        if (res.sender_user_no !== me.user_email) {
+        if (isIncoming && res.sender_user_no !== me.user_email) {
           chat_room_item[1].set_as_unread();
         }
         me.reorder_room(chat_room_item);
@@ -476,8 +493,9 @@ export default class ChatList {
 
   // Helper method to refresh current filter
   refresh_current_filter() {
-    const query = $('.chat-search-box').val().toLowerCase();
+    const query = ($('.chat-search-box').val() || '').toLowerCase();
     const showOnlyUnread = $('.unread-filter-checkbox').is(':checked');
-    this.filter_rooms(query, showOnlyUnread);
+    const showAiOnly = $('.ai-filter-checkbox').is(':checked');
+    this.filter_rooms(query, showOnlyUnread, showAiOnly);
   }
 }
