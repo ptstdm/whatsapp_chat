@@ -7,6 +7,17 @@ import frappe
 MANAGER_ROLES = {"System Manager", "Sales Manager", "Sales Co-ordinator"}
 
 
+def _wa_normalized_col(direction):
+    """Indexed last-10-digit column added to WhatsApp Message by leanerp_whatsapp, or None.
+
+    `direction` is "from" or "to". Returns `custom_<direction>_normalized` when present so
+    phone matching is an index lookup; returns None when leanerp_whatsapp isn't installed so
+    callers fall back to the un-indexable RIGHT()/leading-wildcard LIKE form.
+    """
+    col = f"custom_{direction}_normalized"
+    return col if frappe.db.has_column("WhatsApp Message", col) else None
+
+
 def can_reply_to_contact(contact_email):
     """Whether the current user may reply to a chat owned by `contact_email`."""
     if MANAGER_ROLES & set(frappe.get_roles(frappe.session.user)):
@@ -68,8 +79,16 @@ def get_all(room: str, user_no: str, limit=30, before=None, before_name=None, be
     except (TypeError, ValueError):
         before_kind = 0
 
+    # Match the contact by last-10-digit phone on either side of the message. Prefer the
+    # indexed custom_*_normalized columns (index lookup) over RIGHT() (full-table scan).
+    to_col, from_col = _wa_normalized_col("to"), _wa_normalized_col("from")
+    if to_col and from_col:
+        contact_match = f"(m.{to_col} = %(user_no)s OR m.{from_col} = %(user_no)s)"
+    else:
+        contact_match = "(RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)"
+
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT * FROM (
             (
                 -- Row for text message (only if message exists)
@@ -84,7 +103,7 @@ def get_all(room: str, user_no: str, limit=30, before=None, before_name=None, be
                 LEFT JOIN `tabUser` u ON u.name = m.owner
                 WHERE
                     m.message IS NOT NULL AND m.message <> ''
-                    AND (RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)
+                    AND {contact_match}
             )
             UNION ALL
             (
@@ -100,7 +119,7 @@ def get_all(room: str, user_no: str, limit=30, before=None, before_name=None, be
                 LEFT JOIN `tabUser` u ON u.name = m.owner
                 WHERE
                     m.attach IS NOT NULL AND m.attach <> ''
-                    AND (RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)
+                    AND {contact_match}
             )
         ) AS u
         WHERE (
@@ -141,13 +160,16 @@ def get_room_senders(phones=None):
     if not phones:
         return []
 
+    # Prefer the indexed custom_to_normalized column over RIGHT() (full-table scan).
+    to_col = _wa_normalized_col("to")
+    match_expr = to_col if to_col else "RIGHT(`to`, 10)"
     return frappe.db.sql(
-        """
+        f"""
         SELECT DISTINCT owner, `to`
         FROM `tabWhatsApp Message`
         WHERE type = 'Outgoing'
           AND `to` <> ''
-          AND RIGHT(`to`, 10) IN %(phones)s
+          AND {match_expr} IN %(phones)s
         """,
         {"phones": tuple(phones)},
         as_dict=True,
@@ -166,9 +188,12 @@ def mark_as_read(room):
 
     mobile = doc.mobile_no[-10:]
 
-    # 1. Find all message names where last 10 digits of from_ match
+    # 1. Find all message names where last 10 digits of `from` match. Prefer the indexed
+    # custom_from_normalized column (equality) over a leading-wildcard LIKE (full scan).
+    from_col = _wa_normalized_col("from")
+    from_filter = {from_col: mobile} if from_col else {"from": ["like", f"%{mobile}"]}
     message_names = frappe.db.get_list(
-        "WhatsApp Message", filters={"from": ["like", f"%{mobile}"]}, pluck="name"
+        "WhatsApp Message", filters=from_filter, pluck="name"
     )
 
     # 2. Update each message individually
