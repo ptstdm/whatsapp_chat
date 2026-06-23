@@ -8,13 +8,13 @@ MANAGER_ROLES = {"System Manager", "Sales Manager", "Sales Co-ordinator"}
 
 
 def _wa_normalized_col(direction):
-    """Indexed last-10-digit column added to WhatsApp Message by leanerp_whatsapp, or None.
+    """Indexed last-10-digit column on WhatsApp Message, or None.
 
-    `direction` is "from" or "to". Returns `custom_<direction>_normalized` when present so
-    phone matching is an index lookup; returns None when leanerp_whatsapp isn't installed so
+    `direction` is "from" or "to". Returns `<direction>_normalized` when present so
+    phone matching is an index lookup; returns None when the field is missing so
     callers fall back to the un-indexable RIGHT()/leading-wildcard LIKE form.
     """
-    col = f"custom_{direction}_normalized"
+    col = f"{direction}_normalized"
     return col if frappe.db.has_column("WhatsApp Message", col) else None
 
 
@@ -160,7 +160,7 @@ def get_room_senders(phones=None):
     if not phones:
         return []
 
-    # Prefer the indexed custom_to_normalized column over RIGHT() (full-table scan).
+    # Prefer the indexed to_normalized column over RIGHT() (full-table scan).
     to_col = _wa_normalized_col("to")
     match_expr = to_col if to_col else "RIGHT(`to`, 10)"
     return frappe.db.sql(
@@ -189,7 +189,7 @@ def mark_as_read(room):
     mobile = doc.mobile_no[-10:]
 
     # 1. Find all message names where last 10 digits of `from` match. Prefer the indexed
-    # custom_from_normalized column (equality) over a leading-wildcard LIKE (full scan).
+    # from_normalized column (equality) over a leading-wildcard LIKE (full scan).
     from_col = _wa_normalized_col("from")
     from_filter = {from_col: mobile} if from_col else {"from": ["like", f"%{mobile}"]}
     message_names = frappe.db.get_list(
