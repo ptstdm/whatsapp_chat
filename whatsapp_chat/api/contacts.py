@@ -5,12 +5,13 @@ from frappe.utils import add_to_date, cint, now_datetime
 def _get_chat_window_days(default_days: int = 7) -> int:
     """Window (in days) for the chat-list 'recent incoming message' filter.
 
-    Sourced from the Leanerp WhatsApp Settings single. Falls back to the default
-    when the value/doctype is unset or non-positive so the filter stays active.
+    Sourced from whatsapp_chat's own WhatsApp Chat Settings single (so the app
+    needs only frappe_whatsapp). Falls back to the default when the value/doctype
+    is unset or non-positive so the filter stays active.
     """
     try:
         days = cint(
-            frappe.db.get_single_value("Leanerp WhatsApp Settings", "chat_list_window_days")
+            frappe.db.get_single_value("WhatsApp Chat Settings", "chat_list_window_days")
         )
     except Exception:
         return default_days
