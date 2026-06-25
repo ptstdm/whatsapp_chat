@@ -79,10 +79,6 @@ export default class ChatList {
         <input type='checkbox' class='unread-filter-checkbox'>
         <span class='checkmark'>${__('Unread')}</span>
       </label>
-      <label class='unread-filter-container' title='${__('Show chats the AI agent has replied to')}'>
-        <input type='checkbox' class='ai-filter-checkbox'>
-        <span class='checkmark'>${__('AI chats')}</span>
-      </label>
     `;
   }
 
@@ -291,11 +287,6 @@ export default class ChatList {
       me.refresh_current_filter();
     });
 
-    // Handle "AI chats" filter checkbox
-    $('.ai-filter-checkbox').on('change', function (e) {
-      me.refresh_current_filter();
-    });
-
     // Handle sort dropdown
     $('.wa-filter-sort').on('change', function () {
       me.sort_by = $(this).val();
@@ -495,7 +486,7 @@ export default class ChatList {
   refresh_current_filter() {
     const query = ($('.chat-search-box').val() || '').toLowerCase();
     const showOnlyUnread = $('.unread-filter-checkbox').is(':checked');
-    const showAiOnly = $('.ai-filter-checkbox').is(':checked');
-    this.filter_rooms(query, showOnlyUnread, showAiOnly);
+    // The "AI chats" filter is hidden (not functional) — never restrict to AI-only.
+    this.filter_rooms(query, showOnlyUnread, false);
   }
 }
