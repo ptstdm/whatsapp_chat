@@ -318,8 +318,8 @@ def _update_contact_with_retry(name, values):
             frappe.db.rollback()
             if attempt == _CONTACT_UPDATE_RETRY_ATTEMPTS - 1:
                 frappe.log_error(
-                    "update_contact_on_message: contact update failed after retries",
-                    f"WhatsApp Contact: {name}\n{frappe.get_traceback()}",
+                    title="update_contact_on_message: contact update failed after retries",
+                    message=f"WhatsApp Contact: {name}\n{frappe.get_traceback()}",
                 )
                 return
             if not frappe.local.flags.in_test:
