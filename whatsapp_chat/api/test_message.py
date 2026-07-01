@@ -7,10 +7,10 @@ from whatsapp_chat.api.message import _update_contact_with_retry, update_contact
 
 
 class TestUpdateContactOnMessage(FrappeTestCase):
-    """FIX 4 (2026-07-01 triage): update_contact_on_message ran a get_doc -> save read-modify-write on
-    WhatsApp Contact inside a background job, so on `innodb_snapshot_isolation=ON` a concurrent committed
-    write raised 1020 (ER_CHECKREAD). It now does a targeted set_value (a blind UPDATE with no
-    optimistic-lock read) behind a bounded retry. Fully mocked — no site data required."""
+    """Regression tests for update_contact_on_message: the existing-contact path uses a targeted
+    set_value (a blind UPDATE with no optimistic-lock read) instead of a get_doc -> save
+    read-modify-write, so a concurrent write can't raise 1020 (ER_CHECKREAD) under snapshot isolation;
+    a bounded retry covers a transient 1213/1205. Fully mocked — no site data required."""
 
     def test_update_retries_then_succeeds(self):
         # One 1020 then success: set_value is retried, committed once, nothing logged.
