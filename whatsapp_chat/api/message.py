@@ -1,10 +1,20 @@
 import mimetypes
+import random
+import time
 
 import frappe
 
 # Roles that may reply to any chat. Everyone can *view* every chat; replying is
 # restricted to managers, the chat's owner, or unassigned (shared-pool) chats.
 MANAGER_ROLES = {"System Manager", "Sales Manager", "Sales Co-ordinator"}
+
+# update_contact_on_message runs in a background job and, on `innodb_snapshot_isolation=ON`, a
+# concurrent committed write to the same WhatsApp Contact makes the get_doc->save read-modify-write
+# raise 1020 (QueryDeadlockError). A targeted set_value (blind UPDATE, no optimistic-lock read) removes
+# that class; the retry belt still covers a transient 1213/1205. Best-effort UI state — the next
+# message re-syncs it — so log-only on exhaustion.
+_CONTACT_UPDATE_RETRY_ATTEMPTS = 3
+_CONTACT_UPDATE_BACKOFF_BASE = 0.1  # seconds; full-jitter exponential backoff
 
 
 def _wa_normalized_col(direction):
@@ -295,25 +305,49 @@ def last_message(doc, method):
     )
 
 
+def _update_contact_with_retry(name, values):
+    """Apply a targeted WhatsApp Contact update, retrying through a transient 1213/1205 lock conflict.
+    A blind set_value (no optimistic-lock read) already removes the 1020 RMW class; this belt covers the
+    rarer deadlock/lock-wait. Best-effort UI state (the next message re-syncs), so log-only on exhaustion."""
+    for attempt in range(_CONTACT_UPDATE_RETRY_ATTEMPTS):
+        try:
+            frappe.db.set_value("WhatsApp Contact", name, values)
+            frappe.db.commit()
+            return
+        except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
+            frappe.db.rollback()
+            if attempt == _CONTACT_UPDATE_RETRY_ATTEMPTS - 1:
+                frappe.log_error(
+                    "update_contact_on_message: contact update failed after retries",
+                    f"WhatsApp Contact: {name}\n{frappe.get_traceback()}",
+                )
+                return
+            if not frappe.local.flags.in_test:
+                time.sleep(random.uniform(0, _CONTACT_UPDATE_BACKOFF_BASE * (2**attempt)))
+
+
 def update_contact_on_message(mobile_no, message, message_type, profile_name, is_outgoing, owner=None, message_id=None):
-    contact_name = frappe.db.get_value(
+    contact = frappe.db.get_value(
         "WhatsApp Contact",
-        filters={"mobile_no": ["like", f"%{mobile_no}"]},  
+        filters={"mobile_no": ["like", f"%{mobile_no}"]},
+        fieldname=["name", "contact_name", "email"],
         order_by="modified desc",
+        as_dict=True,
     )
-    if contact_name:
-        chat_doc = frappe.get_doc("WhatsApp Contact", contact_name)
-        chat_doc.last_message = message
-        chat_doc.message_type = message_type
+    if contact:
+        # Targeted UPDATE (no get_doc read) so a concurrent committed write to this row can't raise
+        # 1020 (ER_CHECKREAD) on the read-modify-write. The WhatsApp Contact update path has no
+        # controller lifecycle / doc_event hooks (only after_insert, which runs on insert), so a blind
+        # set_value is behaviour-equivalent to the previous db_update()/save() here.
+        values = {"last_message": message, "message_type": message_type}
         if not is_outgoing:
-            chat_doc.is_read = 0
-        current_contact_name = chat_doc.contact_name or ""
+            values["is_read"] = 0
+        current_contact_name = contact.contact_name or ""
         if current_contact_name[-10:] == mobile_no and profile_name:
-            chat_doc.contact_name = profile_name
-        if is_outgoing:
-            chat_doc.db_update()
-        else:
-            chat_doc.save(ignore_permissions=True)
+            values["contact_name"] = profile_name
+        _update_contact_with_retry(contact.name, values)
+        room_name = contact.name
+        room_email = contact.email
     else:
         chat_doc = frappe.get_doc(
             {
@@ -326,13 +360,15 @@ def update_contact_on_message(mobile_no, message, message_type, profile_name, is
             }
         )
         chat_doc.insert(ignore_permissions=True)
+        room_name = chat_doc.name
+        room_email = chat_doc.email
 
     # Push every message (incoming AND outgoing) so the open chat reflects
     # AI/other-agent/template replies live and the list preview/order updates.
     payload = {
         "content": message,
         "creation": frappe.utils.now(),
-        "room": chat_doc.name,
+        "room": room_name,
         "type": message_type,
         "owner": owner,
         "message_id": message_id,
@@ -341,12 +377,12 @@ def update_contact_on_message(mobile_no, message, message_type, profile_name, is
 
     # Per-room channel: any open ChatSpace (including managers viewing another
     # agent's chat) subscribes to `this.profile.room` and appends live.
-    frappe.publish_realtime(chat_doc.name, payload)
+    frappe.publish_realtime(room_name, payload)
 
     # List channel: updates the owner's chat-list preview / order / unread badge.
-    if chat_doc.email:
+    if room_email:
         frappe.publish_realtime(
             "latest_chat_updates",
             payload,
-            user=chat_doc.email,
+            user=room_email,
         )
