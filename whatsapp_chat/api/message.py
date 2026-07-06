@@ -56,7 +56,9 @@ def assert_can_reply_number(to):
 
 
 @frappe.whitelist()
-def get_all(room: str, user_no: str, limit=30, before=None, before_name=None, before_kind=None):
+def get_all(
+    room: str, user_no: str, limit=30, before=None, before_name=None, before_kind=None
+):
     """Get a page of a room's messages for lazy/infinite scroll.
 
     Returns the newest `limit` rows (text + attachment), in ascending order for
@@ -95,7 +97,9 @@ def get_all(room: str, user_no: str, limit=30, before=None, before_name=None, be
     if to_col and from_col:
         contact_match = f"(m.{to_col} = %(user_no)s OR m.{from_col} = %(user_no)s)"
     else:
-        contact_match = "(RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)"
+        contact_match = (
+            "(RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)"
+        )
 
     rows = frappe.db.sql(
         f"""
@@ -323,10 +327,20 @@ def _update_contact_with_retry(name, values):
                 )
                 return
             if not frappe.local.flags.in_test:
-                time.sleep(random.uniform(0, _CONTACT_UPDATE_BACKOFF_BASE * (2**attempt)))
+                time.sleep(
+                    random.uniform(0, _CONTACT_UPDATE_BACKOFF_BASE * (2**attempt))
+                )
 
 
-def update_contact_on_message(mobile_no, message, message_type, profile_name, is_outgoing, owner=None, message_id=None):
+def update_contact_on_message(
+    mobile_no,
+    message,
+    message_type,
+    profile_name,
+    is_outgoing,
+    owner=None,
+    message_id=None,
+):
     contact = frappe.db.get_value(
         "WhatsApp Contact",
         filters={"mobile_no": ["like", f"%{mobile_no}"]},
