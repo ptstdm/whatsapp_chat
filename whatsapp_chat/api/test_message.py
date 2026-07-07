@@ -3,7 +3,10 @@ from unittest.mock import ANY, MagicMock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from whatsapp_chat.api.message import _update_contact_with_retry, update_contact_on_message
+from whatsapp_chat.api.message import (
+    _update_contact_with_retry,
+    update_contact_on_message,
+)
 
 
 class TestUpdateContactOnMessage(FrappeTestCase):
@@ -19,7 +22,9 @@ class TestUpdateContactOnMessage(FrappeTestCase):
         def flaky_set_value(*args, **kwargs):
             calls["n"] += 1
             if calls["n"] == 1:
-                raise frappe.QueryDeadlockError("1020 Record has changed in tabWhatsApp Contact")
+                raise frappe.QueryDeadlockError(
+                    "1020 Record has changed in tabWhatsApp Contact"
+                )
 
         with (
             patch.object(frappe.db, "set_value", side_effect=flaky_set_value),
@@ -58,13 +63,17 @@ class TestUpdateContactOnMessage(FrappeTestCase):
         # Structural change: an existing contact is updated via a blind set_value — NOT a get_doc + save
         # — so there is no read-modify-write to raise a 1020. Incoming clears is_read; profile_name that
         # matches the bare-number contact_name upgrades it; realtime uses the fetched name/email.
-        contact = frappe._dict({"name": "WA-CONTACT-1", "contact_name": "9998887776", "email": "a@x.com"})
+        contact = frappe._dict(
+            {"name": "WA-CONTACT-1", "contact_name": "9998887776", "email": "a@x.com"}
+        )
         set_value_calls = []
 
         with (
             patch.object(frappe.db, "get_value", return_value=contact),
             patch.object(
-                frappe.db, "set_value", side_effect=lambda dt, name, vals: set_value_calls.append((name, vals))
+                frappe.db,
+                "set_value",
+                side_effect=lambda dt, name, vals: set_value_calls.append((name, vals)),
             ),
             patch.object(frappe.db, "commit"),
             patch("frappe.get_doc") as mock_get_doc,
@@ -88,7 +97,11 @@ class TestUpdateContactOnMessage(FrappeTestCase):
         self.assertEqual(vals["last_message"], "hi")
         self.assertEqual(vals["message_type"], "Incoming")
         self.assertEqual(vals["is_read"], 0, "incoming clears is_read")
-        self.assertEqual(vals["contact_name"], "Cust", "profile_name upgrades a bare-number contact_name")
+        self.assertEqual(
+            vals["contact_name"],
+            "Cust",
+            "profile_name upgrades a bare-number contact_name",
+        )
         # Per-room publish + list-channel publish (email present) both fire with the fetched identifiers.
         mock_publish.assert_any_call("WA-CONTACT-1", ANY)
         mock_publish.assert_any_call("latest_chat_updates", ANY, user="a@x.com")
@@ -117,3 +130,79 @@ class TestUpdateContactOnMessage(FrappeTestCase):
         fake_new.insert.assert_called_once()
         mock_set_value.assert_not_called()
         mock_publish.assert_any_call("WA-CONTACT-NEW", ANY)
+
+    def test_insert_race_falls_back_to_existing_contact(self):
+        # TOCTOU: no contact at first, but a concurrent job for the same NEW number inserts before us, so
+        # our insert trips the mobile_no unique index (UniqueValidationError). We must roll back, re-look
+        # up the winner's row, and take the existing-contact path (targeted set_value + realtime publish
+        # with the winner's identifiers) — never crash the background job.
+        winner = frappe._dict(
+            {"name": "WA-CONTACT-WIN", "contact_name": "9998887776", "email": "w@x.com"}
+        )
+        new_doc = MagicMock()
+        new_doc.insert.side_effect = frappe.UniqueValidationError(
+            "WhatsApp Contact",
+            "WA-CONTACT-WIN",
+            Exception("1062 Duplicate entry for mobile_no"),
+        )
+        set_value_calls = []
+
+        with (
+            # 1st get_value -> None (no contact yet, take the insert path); 2nd (after the dup) -> winner.
+            patch.object(frappe.db, "get_value", side_effect=[None, winner]),
+            patch("frappe.get_doc", return_value=new_doc),
+            patch.object(frappe.db, "rollback") as mock_rollback,
+            patch.object(
+                frappe.db,
+                "set_value",
+                side_effect=lambda dt, name, vals: set_value_calls.append((name, vals)),
+            ),
+            patch.object(frappe.db, "commit"),
+            patch("frappe.publish_realtime") as mock_publish,
+            patch("frappe.utils.now", return_value="2026-07-01 00:00:00"),
+        ):
+            update_contact_on_message(
+                mobile_no="9998887776",
+                message="hi",
+                message_type="Incoming",
+                profile_name="Cust",
+                is_outgoing=False,
+                owner="agent@x.com",
+                message_id="MSG-1",
+            )
+
+        new_doc.insert.assert_called_once()  # we attempted the insert
+        mock_rollback.assert_called_once()  # rolled back the failed insert before falling back
+        self.assertEqual(
+            len(set_value_calls),
+            1,
+            "took the existing-contact targeted update on the winner",
+        )
+        self.assertEqual(set_value_calls[0][0], "WA-CONTACT-WIN")
+        # Realtime still fires for the losing job, addressed to the winner's room/email.
+        mock_publish.assert_any_call("WA-CONTACT-WIN", ANY)
+        mock_publish.assert_any_call("latest_chat_updates", ANY, user="w@x.com")
+
+    def test_insert_race_reraises_when_no_winner_found(self):
+        # If the insert fails with UniqueValidationError but the re-lookup finds nothing (a genuine
+        # integrity error, not the race), re-raise instead of silently swallowing it as the race.
+        new_doc = MagicMock()
+        new_doc.insert.side_effect = frappe.UniqueValidationError(
+            "WhatsApp Contact", "WA-X", Exception("1062 Duplicate entry")
+        )
+
+        with (
+            patch.object(frappe.db, "get_value", side_effect=[None, None]),
+            patch("frappe.get_doc", return_value=new_doc),
+            patch.object(frappe.db, "rollback"),
+            patch("frappe.publish_realtime"),
+            patch("frappe.utils.now", return_value="2026-07-01 00:00:00"),
+            self.assertRaises(frappe.UniqueValidationError),
+        ):
+            update_contact_on_message(
+                mobile_no="9998887776",
+                message="hi",
+                message_type="Incoming",
+                profile_name="Cust",
+                is_outgoing=False,
+            )

@@ -56,7 +56,9 @@ def assert_can_reply_number(to):
 
 
 @frappe.whitelist()
-def get_all(room: str, user_no: str, limit=30, before=None, before_name=None, before_kind=None):
+def get_all(
+    room: str, user_no: str, limit=30, before=None, before_name=None, before_kind=None
+):
     """Get a page of a room's messages for lazy/infinite scroll.
 
     Returns the newest `limit` rows (text + attachment), in ascending order for
@@ -95,7 +97,9 @@ def get_all(room: str, user_no: str, limit=30, before=None, before_name=None, be
     if to_col and from_col:
         contact_match = f"(m.{to_col} = %(user_no)s OR m.{from_col} = %(user_no)s)"
     else:
-        contact_match = "(RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)"
+        contact_match = (
+            "(RIGHT(m.`to`, 10) = %(user_no)s OR RIGHT(m.`from`, 10) = %(user_no)s)"
+        )
 
     rows = frappe.db.sql(
         f"""
@@ -323,10 +327,20 @@ def _update_contact_with_retry(name, values):
                 )
                 return
             if not frappe.local.flags.in_test:
-                time.sleep(random.uniform(0, _CONTACT_UPDATE_BACKOFF_BASE * (2**attempt)))
+                time.sleep(
+                    random.uniform(0, _CONTACT_UPDATE_BACKOFF_BASE * (2**attempt))
+                )
 
 
-def update_contact_on_message(mobile_no, message, message_type, profile_name, is_outgoing, owner=None, message_id=None):
+def update_contact_on_message(
+    mobile_no,
+    message,
+    message_type,
+    profile_name,
+    is_outgoing,
+    owner=None,
+    message_id=None,
+):
     contact = frappe.db.get_value(
         "WhatsApp Contact",
         filters={"mobile_no": ["like", f"%{mobile_no}"]},
@@ -334,11 +348,45 @@ def update_contact_on_message(mobile_no, message, message_type, profile_name, is
         order_by="modified desc",
         as_dict=True,
     )
+    if not contact:
+        try:
+            chat_doc = frappe.get_doc(
+                {
+                    "doctype": "WhatsApp Contact",
+                    "mobile_no": mobile_no,
+                    "last_message": message,
+                    "contact_name": profile_name or mobile_no,
+                    "message_type": message_type,
+                    "is_read": 0,
+                }
+            )
+            chat_doc.insert(ignore_permissions=True)
+            room_name = chat_doc.name
+            room_email = chat_doc.email
+        except frappe.UniqueValidationError:
+            # TOCTOU race: a concurrent message for the same NEW number passed the same existence check
+            # above and inserted first, so this insert trips the mobile_no unique index. Roll back the
+            # failed insert and fall through to the existing-contact path against the row the winner
+            # created, so this message still updates the contact and fires its realtime publish. (The
+            # insert branch was the gap the 07-01 update-branch retry fix left open.)
+            frappe.db.rollback()
+            contact = frappe.db.get_value(
+                "WhatsApp Contact",
+                filters={"mobile_no": ["like", f"%{mobile_no}"]},
+                fieldname=["name", "contact_name", "email"],
+                order_by="modified desc",
+                as_dict=True,
+            )
+            if not contact:
+                # No winning row to fall back to (deleted meanwhile, or a non-race integrity error) —
+                # re-raise so a genuine failure isn't silently swallowed as if it were the race.
+                raise
+
     if contact:
-        # Targeted UPDATE (no get_doc read) so a concurrent committed write to this row can't raise
-        # 1020 (ER_CHECKREAD) on the read-modify-write. The WhatsApp Contact update path has no
-        # controller lifecycle / doc_event hooks (only after_insert, which runs on insert), so a blind
-        # set_value is behaviour-equivalent to the previous db_update()/save() here.
+        # Existing (or raced-to-existing) contact. Targeted UPDATE (no get_doc read) so a concurrent
+        # committed write to this row can't raise 1020 (ER_CHECKREAD) on the read-modify-write. The
+        # WhatsApp Contact update path has no controller lifecycle / doc_event hooks (only after_insert,
+        # which runs on insert), so a blind set_value is behaviour-equivalent to a db_update()/save().
         values = {"last_message": message, "message_type": message_type}
         if not is_outgoing:
             values["is_read"] = 0
@@ -348,20 +396,6 @@ def update_contact_on_message(mobile_no, message, message_type, profile_name, is
         _update_contact_with_retry(contact.name, values)
         room_name = contact.name
         room_email = contact.email
-    else:
-        chat_doc = frappe.get_doc(
-            {
-                "doctype": "WhatsApp Contact",
-                "mobile_no": mobile_no,
-                "last_message": message,
-                "contact_name": profile_name or mobile_no,
-                "message_type": message_type,
-                "is_read": 0,
-            }
-        )
-        chat_doc.insert(ignore_permissions=True)
-        room_name = chat_doc.name
-        room_email = chat_doc.email
 
     # Push every message (incoming AND outgoing) so the open chat reflects
     # AI/other-agent/template replies live and the list preview/order updates.
