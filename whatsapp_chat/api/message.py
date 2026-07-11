@@ -1,8 +1,9 @@
 import mimetypes
-import random
-import time
+# import random
+# import time
 
 import frappe
+from whatsapp_chat.utils.db_retry import run_with_deadlock_retry
 
 # Roles that may reply to any chat. Everyone can *view* every chat; replying is
 # restricted to managers, the chat's owner, or unassigned (shared-pool) chats.
@@ -308,29 +309,28 @@ def last_message(doc, method):
         message_id=doc.name,
     )
 
-
 def _update_contact_with_retry(name, values):
-    """Apply a targeted WhatsApp Contact update, retrying through a transient 1213/1205 lock conflict.
-    A blind set_value (no optimistic-lock read) already removes the 1020 RMW class; this belt covers the
-    rarer deadlock/lock-wait. Best-effort UI state (the next message re-syncs), so log-only on exhaustion."""
-    for attempt in range(_CONTACT_UPDATE_RETRY_ATTEMPTS):
-        try:
-            frappe.db.set_value("WhatsApp Contact", name, values)
-            frappe.db.commit()
-            return
-        except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
-            frappe.db.rollback()
-            if attempt == _CONTACT_UPDATE_RETRY_ATTEMPTS - 1:
-                frappe.log_error(
-                    title="update_contact_on_message: contact update failed after retries",
-                    message=f"WhatsApp Contact: {name}\n{frappe.get_traceback()}",
-                )
-                return
-            if not frappe.local.flags.in_test:
-                time.sleep(
-                    random.uniform(0, _CONTACT_UPDATE_BACKOFF_BASE * (2**attempt))
-                )
+	"""Apply a targeted WhatsApp Contact update, retrying through transient lock conflicts.
+	A blind set_value (no optimistic-lock read) already removes the 1020 RMW class; this
+	belt covers the rarer deadlock/lock-wait. Best-effort UI state (the next message
+	re-syncs), so log-only on exhaustion."""
 
+	def _op():
+		frappe.db.set_value("WhatsApp Contact", name, values)
+		frappe.db.commit()
+
+	return run_with_deadlock_retry(
+		op=_op,
+		attempts=_CONTACT_UPDATE_RETRY_ATTEMPTS,
+		backoff_base=_CONTACT_UPDATE_BACKOFF_BASE,
+		exceptions=(
+			frappe.QueryDeadlockError,
+			frappe.QueryTimeoutError,
+		),
+		log_title="update_contact_on_message: contact update failed after retries",
+		log_context=f"WhatsApp Contact: {name}",
+		on_exhausted="log",
+	)
 
 def update_contact_on_message(
     mobile_no,
