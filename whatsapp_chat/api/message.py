@@ -1,6 +1,4 @@
 import mimetypes
-# import random
-# import time
 
 import frappe
 from whatsapp_chat.utils.db_retry import run_with_deadlock_retry
