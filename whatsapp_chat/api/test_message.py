@@ -30,7 +30,7 @@ class TestUpdateContactOnMessage(FrappeTestCase):
             patch.object(frappe.db, "set_value", side_effect=flaky_set_value),
             patch.object(frappe.db, "commit") as mock_commit,
             patch.object(frappe.db, "rollback") as mock_rollback,
-            patch("whatsapp_chat.api.message.time.sleep"),
+            patch("leanerp.utils.db_retry.time.sleep"),
             patch("frappe.log_error") as mock_log,
         ):
             _update_contact_with_retry("WA-CONTACT-1", {"last_message": "hi"})
@@ -50,7 +50,7 @@ class TestUpdateContactOnMessage(FrappeTestCase):
             patch.object(frappe.db, "set_value", side_effect=always_deadlock),
             patch.object(frappe.db, "commit") as mock_commit,
             patch.object(frappe.db, "rollback"),
-            patch("whatsapp_chat.api.message.time.sleep"),
+            patch("leanerp.utils.db_retry.time.sleep"),
             patch("frappe.log_error") as mock_log,
         ):
             # Must not raise.
