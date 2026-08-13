@@ -148,6 +148,13 @@ $height: 582px;
     }
   }
 
+  .chat-list-empty {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: $font-size-sm;
+  }
+
   .chat-rooms-container {
     height: calc_height($height, 0px);
     overflow-y: scroll;
@@ -277,9 +284,24 @@ $height: 582px;
         max-width: 78%;
       }
     }
+    .message-sender {
+      font-size: $font-size-xs;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
     .message-time {
       font-size: $font-size-xs;
       color: var(--text-muted);
+    }
+    .message-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      .message-time::before {
+        content: "·";
+        margin-right: 6px;
+        color: var(--text-muted);
+      }
     }
     .date-line {
       width: 100%;
@@ -478,5 +500,202 @@ $height: 582px;
     border-radius: 50%;
     font-size: 9px;
     border: 1px solid var(--red-avatar-color);
+  }
+}
+
+// ── Full-screen WhatsApp page ────────────────────────────────────────────────
+
+.wa-main {
+  padding: 0 !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 60px); // viewport minus Frappe navbar
+}
+
+// Full-width filter header above both panels; keeps the chat list and
+// conversation columns top-aligned and equal height.
+.wa-filters-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px $padding-chat-lr;
+  border-top: 1px solid var(--dark-border-color);
+  border-bottom: 1px solid var(--dark-border-color);
+
+  .wa-filter-sentby {
+    flex: 0 0 240px;
+    min-width: 0;
+  }
+  .wa-filter-sort {
+    flex: 0 0 170px;
+    height: 28px;
+    font-size: $font-size-sm;
+  }
+  .wa-filter-sentby .frappe-control,
+  .wa-filter-sentby .control-input-wrapper,
+  .wa-filter-sentby .control-input,
+  .wa-filter-sentby input {
+    margin: 0;
+    width: 100%;
+  }
+  .wa-filter-sentby input {
+    height: 28px;
+  }
+  .unread-filter-container {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: $font-size-sm;
+    color: var(--text-color);
+  }
+  .unread-filter-checkbox {
+    margin: 0;
+  }
+}
+
+.wa-page {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wa-panel-left {
+  width: 320px;
+  min-width: 280px;
+  border-right: 1px solid var(--dark-border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  .chat-list {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .chat-rooms-container {
+    // Override the fixed-height calc from the widget
+    height: auto !important;
+    flex: 1;
+    overflow-y: auto;
+  }
+}
+
+.wa-panel-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--card-bg);
+
+  .chat-space {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+
+    .chat-space-container {
+      // Override fixed-height calc; fill remaining space
+      height: auto !important;
+      flex: 1;
+      overflow-y: auto;
+    }
+  }
+
+  // Hide back button in two-panel layout
+  .chat-back-button {
+    display: none !important;
+  }
+}
+
+// Empty-state placeholder shown before any room is selected
+.wa-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  gap: var(--margin-md);
+
+  .wa-empty-icon {
+    svg {
+      width: 3rem;
+      height: 3rem;
+      opacity: 0.35;
+    }
+  }
+
+  h4 {
+    margin: 0;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  p {
+    margin: 0;
+    font-size: $font-size-sm;
+  }
+}
+
+// Linked-doc navigation button inside the chat header
+.wa-linked-doc-container {
+  margin-left: auto;
+  flex-shrink: 0;
+
+  .wa-linked-doc-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: $font-size-sm;
+    font-weight: 500;
+    color: var(--blue-600, #2490ef);
+    background: var(--bg-blue, #f0f6ff);
+    border: none;
+    border-radius: var(--border-radius-full, 20px);
+    padding: 4px 12px;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background 0.15s ease, color 0.15s ease;
+
+    svg {
+      flex-shrink: 0;
+      fill: currentColor;
+    }
+
+    &:hover {
+      background: var(--blue-100, #d6e9fb);
+      color: var(--blue-700, #1366b3);
+      text-decoration: none;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .wa-page {
+    .wa-panel-left {
+      width: 100%;
+      display: flex;
+    }
+    .wa-panel-right {
+      width: 100%;
+      display: none;
+    }
+
+    // Chat-open state: hide list, show chat space
+    &.wa-chat-open {
+      .wa-panel-left  { display: none; }
+      .wa-panel-right { display: flex; }
+    }
+  }
+
+  .chat-back-button {
+    display: flex !important;
   }
 }

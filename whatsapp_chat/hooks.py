@@ -4,7 +4,7 @@ app_publisher = "shridhar patil"
 app_description = "Chat app for whatsapp"
 app_email = "shridharpatil2792@gmail.com"
 app_license = "unlicense"
-# required_apps = []
+required_apps = ["ptstdm/frappe_whatsapp"]
 
 # Includes in <head>
 # ------------------
